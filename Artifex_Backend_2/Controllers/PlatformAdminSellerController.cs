@@ -71,25 +71,46 @@ namespace Artifex_Backend_2.Controllers
             return Ok("Seller unsuspended.");
         }
 
-        [HttpDelete("deactivate-seller/{sellerId}")]
-        public async Task<IActionResult> DeleteSeller(Guid sellerId)
+        [HttpPatch("deactivate-seller/{sellerId}")]
+        public async Task<IActionResult> DeactivateSeller(Guid sellerId)
         {
-            var seller = await _db.Sellers.FindAsync(sellerId);
+            var seller = await _db.Sellers
+                .Include(s => s.User)
+                .FirstOrDefaultAsync(s => s.Id == sellerId);
+
             if (seller == null)
                 return NotFound("Seller not found.");
 
-            var user = await _db.Users.FindAsync(seller.UserId);
+            seller.IsDeactivated = true;
+            seller.IsApproved = false;
 
-            _db.Sellers.Remove(seller);
-
-            if (user != null)
+            if (seller.User != null)
             {
-                // You can delete the user or downgrade back to normal user
-                user.Role = UserRole.User;
+                seller.User.Role = UserRole.User; // Downgrade access
             }
 
             await _db.SaveChangesAsync();
-            return Ok("Seller profile deleted.");
+            return Ok("Seller deactivated successfully.");
         }
+
+        [HttpPatch("reactivate-seller/{sellerId}")]
+        public async Task<IActionResult> ReactivateSeller(Guid sellerId)
+        {
+            var seller = await _db.Sellers
+                .Include(s => s.User)
+                .FirstOrDefaultAsync(s => s.Id == sellerId);
+
+            if (seller == null)
+                return NotFound();
+
+            seller.IsDeactivated = false;
+            seller.IsApproved = true;
+
+            seller.User.Role = UserRole.Seller;
+
+            await _db.SaveChangesAsync();
+            return Ok("Seller reactivated.");
+        }
+
     }
 }
