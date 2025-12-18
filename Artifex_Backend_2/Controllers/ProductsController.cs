@@ -9,7 +9,7 @@ namespace Artifex_Backend_2.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    
+
     public class ProductsController : ControllerBase
     {
         private readonly ArtifexDbContext _context;
@@ -20,92 +20,106 @@ namespace Artifex_Backend_2.Controllers
             _context = context;
             _environment = environment;
         }
-        
+
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         [HttpPost("new-product")]
-        
+
         public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto productDto)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            // 1. Get current logged-in user ID (Seller)
-            var sellerIdString = User.FindFirstValue("sub")
-                         ?? User.FindFirstValue("id")
-                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-            if (string.IsNullOrEmpty(sellerIdString))
+            try
             {
-                // Debugging aid: Print what claims ARE present to your logs
-                Console.WriteLine("DEBUG: Token claims received:");
-                foreach (var claim in User.Claims) Console.WriteLine($"{claim.Type}: {claim.Value}");
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
 
-                return Unauthorized("User ID claim is missing from token.");
-            }
+                // 1. Get current logged-in user ID (Seller)
+                var sellerIdString = User.FindFirstValue("sub")
+                             ?? User.FindFirstValue("id")
+                             ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            if (!Guid.TryParse(sellerIdString, out Guid sellerIdGuid))
-            {
-                return BadRequest("Invalid User ID format");
-            }
-
-            // 2. Map DTO to Entity
-            var product = new Product
-            {
-                SellerId = sellerIdGuid,
-                Name = productDto.Name,
-                Description = productDto.Description,
-                Price = productDto.Price,
-                Category = productDto.Category,
-                StockQuantity = productDto.StockQuantity,
-                StockStatus = productDto.StockStatus,
-                Tags = productDto.Tags,
-                TutorialLink = productDto.TutorialLink
-            };
-
-            // 3. Handle Image Uploads
-            // In a real app, upload to Azure Blob Storage / AWS S3 / Cloudinary here.
-            // For this example, we save to the local 'wwwroot/images' folder.
-            if (productDto.Images != null && productDto.Images.Count > 0)
-            {
-                var uploadsFolder = Path.Combine(_environment.WebRootPath, "images", "products");
-                if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
-
-                foreach (var file in productDto.Images)
+                if (string.IsNullOrEmpty(sellerIdString))
                 {
-                    if (file.Length > 0)
+                    // Debugging aid: Print what claims ARE present to your logs
+                    Console.WriteLine("DEBUG: Token claims received:");
+                    foreach (var claim in User.Claims) Console.WriteLine($"{claim.Type}: {claim.Value}");
+
+                    return Unauthorized("User ID claim is missing from token.");
+                }
+
+                if (!Guid.TryParse(sellerIdString, out Guid sellerIdGuid))
+                {
+                    return BadRequest("Invalid User ID format");
+                }
+
+                // 2. Map DTO to Entity
+                var product = new Product
+                {
+                    SellerId = sellerIdGuid,
+                    Name = productDto.Name,
+                    Description = productDto.Description,
+                    Price = productDto.Price,
+                    Category = productDto.Category,
+                    StockQuantity = productDto.StockQuantity,
+                    StockStatus = productDto.StockStatus,
+                    Tags = productDto.Tags,
+                    TutorialLink = productDto.TutorialLink
+                };
+
+                // 3. Handle Image Uploads
+                // In a real app, upload to Azure Blob Storage / AWS S3 / Cloudinary here.
+                // For this example, we save to the local 'wwwroot/images' folder.
+                if (productDto.Images != null && productDto.Images.Count > 0)
+                {
+                    // USE ContentRootPath instead of WebRootPath for better stability on cloud
+                    string webRoot = _environment.WebRootPath ?? _environment.ContentRootPath;
+                    var uploadsFolder = Path.Combine(webRoot, "uploads", "products");
+
+                    if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+                    foreach (var file in productDto.Images)
                     {
-                        // Generate unique filename
-                        var uniqueFileName = Guid.NewGuid().ToString() + "_" + file.FileName;
-                        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-                        // Save file to disk
-                        using (var fileStream = new FileStream(filePath, FileMode.Create))
+                        if (file.Length > 0)
                         {
-                            await file.CopyToAsync(fileStream);
+                            var uniqueFileName = Guid.NewGuid().ToString() + "_" + file.FileName;
+                            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+                            using (var fileStream = new FileStream(filePath, FileMode.Create))
+                            {
+                                await file.CopyToAsync(fileStream);
+                            }
+
+                            product.Images.Add(new ProductImage
+                            {
+                                Url = $"/uploads/products/{uniqueFileName}"
+                            });
                         }
-
-                        // Add to Product Images List
-                        product.Images.Add(new ProductImage
-                        {
-                            Url = $"/images/products/{uniqueFileName}"
-                        });
                     }
                 }
+
+                // 4. Save to Database
+                _context.Products.Add(product);
+                await _context.SaveChangesAsync();
+
+                return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, product);
             }
-
-            // 4. Save to Database
-            _context.Products.Add(product);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, product);
+            catch (Exception ex)
+            {
+                // THIS IS THE KEY: Return the actual crash error
+                return StatusCode(500, new
+                {
+                    message = "Internal Server Error",
+                    details = ex.Message,
+                    stack = ex.StackTrace
+                });
+            }
         }
 
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetProductById(int id)
-        {
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return NotFound();
-            return Ok(product);
+            [HttpGet("{id}")]
+            public async Task<IActionResult> GetProductById(int id)
+            {
+                var product = await _context.Products.FindAsync(id);
+                if (product == null) return NotFound();
+                return Ok(product);
+            }
         }
     }
-}
+
