@@ -81,6 +81,7 @@ var jwtKey = jwtSection.GetValue<string>("Key")!;
 var issuer = jwtSection.GetValue<string>("Issuer") ?? "Artifex";
 var audience = jwtSection.GetValue<string>("Audience") ?? "ArtifexUsers";
 
+System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -102,6 +103,7 @@ builder.Services.AddAuthorization();
 // ----------------------
 // CORS for Frontend
 // ----------------------
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>

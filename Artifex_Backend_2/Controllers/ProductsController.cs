@@ -2,7 +2,6 @@
 using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -10,7 +9,7 @@ namespace Artifex_Backend_2.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize (AuthenticationSchemes = "Bearer", Roles = "2" )]
+    
     public class ProductsController : ControllerBase
     {
         private readonly ArtifexDbContext _context;
@@ -21,17 +20,28 @@ namespace Artifex_Backend_2.Controllers
             _context = context;
             _environment = environment;
         }
-
-        [HttpPost("new-product")]
+        
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
+        [HttpPost("new-product")]
+        
         public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto productDto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
             // 1. Get current logged-in user ID (Seller)
-            var sellerIdString = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (sellerIdString == null) return Unauthorized();
+            var sellerIdString = User.FindFirstValue("sub")
+                         ?? User.FindFirstValue("id")
+                         ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (string.IsNullOrEmpty(sellerIdString))
+            {
+                // Debugging aid: Print what claims ARE present to your logs
+                Console.WriteLine("DEBUG: Token claims received:");
+                foreach (var claim in User.Claims) Console.WriteLine($"{claim.Type}: {claim.Value}");
+
+                return Unauthorized("User ID claim is missing from token.");
+            }
 
             if (!Guid.TryParse(sellerIdString, out Guid sellerIdGuid))
             {
