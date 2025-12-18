@@ -11,9 +11,21 @@ var builder = WebApplication.CreateBuilder(args);
 // ----------------------
 // Database
 // ----------------------
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
 builder.Services.AddDbContext<ArtifexDbContext>(options =>
-    options.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"),
-        new MySqlServerVersion(new Version(8, 0, 29))));
+    options.UseMySql(connectionString,
+        ServerVersion.AutoDetect(connectionString),
+        // Add this configuration lambda:
+        mySqlOptions =>
+        {
+            mySqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,                    // Try 5 times before failing
+                maxRetryDelay: TimeSpan.FromSeconds(10), // Wait up to 10s between tries
+                errorNumbersToAdd: null
+            );
+        }
+    ));
 
 // ----------------------
 // Controllers
