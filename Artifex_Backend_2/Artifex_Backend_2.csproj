@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <!-- EF Core MySQL -->
+    <PackageReference Include="CloudinaryDotNet" Version="1.27.9" />
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="8.0.2" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.8" />
 

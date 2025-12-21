@@ -25,6 +25,6 @@ namespace Artifex_Backend_2.DTOs
         public string? TutorialLink { get; set; }
 
         // This captures the files sent from React
-        public List<IFormFile> Images { get; set; } = new List<IFormFile>();
+        public List<IFormFile>? Images { get; set; }
     }
 }
