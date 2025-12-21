@@ -1,116 +1,148 @@
 ﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System.Security.Claims;
 
 namespace Artifex_Backend_2.Controllers
 {
-    [Route("api/[controller]")]
     [ApiController]
-
+    [Route("api/[controller]")]
+    [Authorize(AuthenticationSchemes = "Bearer")]
     public class ProductsController : ControllerBase
     {
         private readonly ArtifexDbContext _context;
-        private readonly IWebHostEnvironment _environment;
+        private readonly Cloudinary _cloudinary;
 
-        public ProductsController(ArtifexDbContext context, IWebHostEnvironment environment)
+        public ProductsController(ArtifexDbContext context, IConfiguration config)
         {
             _context = context;
-            _environment = environment;
-        }
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")] // or "Seller"
-        [HttpPost("new-product")]
-        public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto productDto)
-        {
-            try
-            {
-                // 1. Validation & User ID Logic
-                if (!ModelState.IsValid) return BadRequest(ModelState);
 
-                var sellerIdString = User.FindFirstValue("sub") ?? User.FindFirstValue("id") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(sellerIdString) || !Guid.TryParse(sellerIdString, out Guid sellerIdGuid))
-                    return Unauthorized("User ID invalid.");
+            // Cloudinary config (Render-safe)
+            var account = new Account(
+                config["Cloudinary:CloudName"],
+                config["Cloudinary:ApiKey"],
+                config["Cloudinary:ApiSecret"]
+            );
+
+            _cloudinary = new Cloudinary(account)
+            {
+                Api = { Secure = true }
+            };
+        }
+
+        // ===========================
+        // CREATE PRODUCT (SELLER ONLY)
+        // ===========================
+        [HttpPost("new-product")]
+        public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            // ✅ 1. Extract USER ID from JWT (CORRECT CLAIM)
+            var userIdString = User.FindFirstValue("id");
+            if (!Guid.TryParse(userIdString, out var userId))
+                return Unauthorized("Invalid token.");
+
+            // ✅ 2. Get SELLER profile
+            var seller = await _context.Sellers
+                .FirstOrDefaultAsync(s => s.UserId == userId);
+
+            if (seller == null)
+                return Forbid("You are not registered as a seller.");
+
+            if (!seller.IsApproved)
+                return Forbid("Seller account not approved.");
+
+            if (seller.IsSuspended)
+                return Forbid("Seller account is suspended.");
+
+            // ✅ 3. Create Product
+            var product = new Product
+            {
+                SellerId = seller.Id, // 🔥 CORRECT FK
+                Name = dto.Name,
+                Description = dto.Description,
+                Price = dto.Price,
+                Category = dto.Category,
+                StockQuantity = dto.StockQuantity,
+                StockStatus = dto.StockStatus,
+                Tags = dto.Tags,
+                TutorialLink = dto.TutorialLink,
+                CreatedAt = DateTime.UtcNow,
+                Images = new List<ProductImage>() // 🔥 PREVENT NULL CRASH
+            };
+
+            // ✅ 4. Upload Images to Cloudinary (NO local disk usage)
+            if (dto.Images != null && dto.Images.Count > 0)
+            {
+                foreach (var file in dto.Images)
+                {
+                    if (file.Length <= 0) continue;
+
+                    using var stream = file.OpenReadStream();
+
+                    var uploadParams = new ImageUploadParams
+                    {
+                        File = new FileDescription(file.FileName, stream),
+                        Transformation = new Transformation().Width(800).Crop("limit")
+                    };
+
+                    var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+                    if (uploadResult.StatusCode != System.Net.HttpStatusCode.OK)
+                        return StatusCode(500, "Image upload failed.");
+
+                    product.Images.Add(new ProductImage
+                    {
+                        Url = uploadResult.SecureUrl.ToString()
+                    });
+                }
+            }
+
+            // ✅ 5. Save
+            _context.Products.Add(product);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetProductById),
+                new { id = product.Id },
+                product);
+        }
+
+        // ===========================
+        // GET PRODUCT BY ID
+        // ===========================
+        [AllowAnonymous]
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetProductById(Guid id)
+        {
+            var product = await _context.Products
+                .Include(p => p.Images)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (product == null)
+                return NotFound("Product not found.");
+
+            return Ok(product);
+        }
+    }
+}
+
+
+
+
+
+
 
                 var cloudName = "dara9iyzd";
                 var apiKey = "878485448233523";
                 var apiSecret = "niQwJswcShM7KM1G9vpPqhicfYA";
 
-                Account account = new Account(cloudName, apiKey, apiSecret);
-                Cloudinary cloudinary = new Cloudinary(account);
-                cloudinary.Api.Secure = true;
-
-                // 2. Create Product Entity
-                var product = new Product
-                {
-                    SellerId = sellerIdGuid,
-                    Name = productDto.Name,
-                    Description = productDto.Description,
-                    Price = productDto.Price,
-                    Category = productDto.Category,
-                    StockQuantity = productDto.StockQuantity,
-                    StockStatus = productDto.StockStatus,
-                    Tags = productDto.Tags,
-                    TutorialLink = productDto.TutorialLink,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                // 3. SAFE FILE UPLOAD (Fixes 500 Error)
-                if (productDto.Images != null && productDto.Images.Count > 0)
-                {
-                    foreach (var file in productDto.Images)
-                    {
-                        if (file.Length > 0)
-                        {
-                            // "OpenReadStream" reads the file from memory 
-                            // It does NOT save to the disk, so Render won't crash!
-                            using (var stream = file.OpenReadStream())
-                            {
-                                var uploadParams = new ImageUploadParams()
-                                {
-                                    File = new FileDescription(file.FileName, stream),
-                                    // Optional: Crop huge images to 500px wide to save space
-                                    Transformation = new Transformation().Width(500).Crop("limit")
-                                };
-
-                                // Send to Cloudinary
-                                var uploadResult = await cloudinary.UploadAsync(uploadParams);
-
-                                // Save the resulting URL (e.g., https://res.cloudinary.com/...)
-                                product.Images.Add(new ProductImage
-                                {
-                                    Url = uploadResult.SecureUrl.ToString()
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // 4. Save to DB
-                _context.Products.Add(product);
-                await _context.SaveChangesAsync();
-
-                return CreatedAtAction(nameof(GetProductById), new { id = product.Id }, product);
-            }
-            catch (Exception ex)
-            {
-                // Return detailed error if it still crashes
-                return StatusCode(500, new { message = ex.Message, stack = ex.StackTrace });
-            }
-        }
-
-        [HttpGet("{id}")]
-            public async Task<IActionResult> GetProductById(int id)
-            {
-                var product = await _context.Products.FindAsync(id);
-                if (product == null) return NotFound();
-                return Ok(product);
-            }
-
-
-        }
-    }
+             
 
