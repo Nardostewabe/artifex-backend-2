@@ -126,6 +126,7 @@ namespace Artifex_Backend_2.Controllers
                 .Include(p => p.Images)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
+
             if (product == null)
                 return NotFound("Product not found.");
 
@@ -133,16 +134,5 @@ namespace Artifex_Backend_2.Controllers
         }
     }
 }
-
-
-
-
-
-
-
-                var cloudName = "dara9iyzd";
-                var apiKey = "878485448233523";
-                var apiSecret = "niQwJswcShM7KM1G9vpPqhicfYA";
-
              
 

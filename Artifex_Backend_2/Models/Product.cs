@@ -6,7 +6,7 @@ namespace Artifex_Backend_2.Models
     public class Product
     {
         [Key]
-        public int Id { get; set; }
+        public Guid Id { get; set; }
 
         // Foreign Key to your User/Seller table
         // Assuming you use IdentityUser or a custom User class
