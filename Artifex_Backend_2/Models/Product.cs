@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Artifex_Backend_2.Models
 {
@@ -8,9 +9,13 @@ namespace Artifex_Backend_2.Models
         [Key]
         public int Id { get; set; }
 
-        // Foreign Key to your User/Seller table
-        // Assuming you use IdentityUser or a custom User class
         public Guid SellerId { get; set; }
+
+        [ForeignKey("SellerId")]
+        [JsonIgnore]
+        public virtual Seller Seller { get; set; }
+
+       
 
         [Required]
         [MaxLength(100)]
@@ -24,21 +29,16 @@ namespace Artifex_Backend_2.Models
         [Column(TypeName = "decimal(18,2)")]
         public decimal Price { get; set; }
 
-        [Required]
-        public string Category { get; set; } = string.Empty; // e.g., "Ceramics"
+        
+        public virtual ICollection<Category> Categories { get; set; } = new List<Category>();
 
         public int StockQuantity { get; set; } = 1;
-
-        public string StockStatus { get; set; } = "In Stock"; // Enum string
-
-        public string? Tags { get; set; } // Comma separated string: "clay, vintage"
-
+        public string StockStatus { get; set; } = "In Stock";
+        public int OrderCount { get; set; } = 0;
+        public bool IsTrending { get; set; } = false;
+        public string? Tags { get; set; }
         public string? TutorialLink { get; set; }
-
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        // Navigation Property: One Product has many Images
         public List<ProductImage> Images { get; set; } = new List<ProductImage>();
-
     }
 }

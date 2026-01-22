@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Artifex_Backend_2.Models
 {
@@ -13,6 +14,7 @@ namespace Artifex_Backend_2.Models
         public Guid UserId { get; set; }
 
         [ForeignKey(nameof(UserId))]
+        [JsonIgnore]
         public User User { get; set; }
         [MaxLength(200)]
         public string ? FullName { get; set; }

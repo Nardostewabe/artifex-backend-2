@@ -103,9 +103,16 @@ namespace Artifex_Backend_2.Controllers
             }
 
             var user = await _db.Users
-                .FirstOrDefaultAsync(u => u.Username == dto.UsernameOrEmail || u.Email == dto.UsernameOrEmail);
+      .FirstOrDefaultAsync(u => u.Username == dto.UsernameOrEmail || u.Email == dto.UsernameOrEmail);
+
+            // 1. CRITICAL: Check for null FIRST.
+            // If this is null, we must stop immediately.
+            if (user == null)
+                return Unauthorized("User not found.");
+
+            // 2. Now it is safe to access user.Role
             bool isApproved = false;
-            if(user.Role == UserRole.Seller)
+            if (user.Role == UserRole.Seller)
             {
                 var sellerProfile = await _db.Sellers.FirstOrDefaultAsync(s => s.UserId == user.Id);
                 if (sellerProfile != null)
@@ -114,9 +121,7 @@ namespace Artifex_Backend_2.Controllers
                 }
             }
 
-            if (user == null)
-                return Unauthorized("User not found.");
-
+            // ... continue with password check ...
             var result = _hasher.VerifyHashedPassword(user, user.PasswordHash, dto.Password);
             if (result == PasswordVerificationResult.Failed)
                 return Unauthorized("Invalid password.");

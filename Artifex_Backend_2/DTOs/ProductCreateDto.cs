@@ -13,9 +13,7 @@ namespace Artifex_Backend_2.DTOs
         [Required]
         public decimal Price { get; set; }
 
-        [Required]
-        public string Category { get; set; } = string.Empty;
-
+        public List<int> CategoryIds { get; set; } = new List<int>();
         public int StockQuantity { get; set; } = 1;
 
         public string StockStatus { get; set; } = "In Stock";

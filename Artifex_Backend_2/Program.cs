@@ -15,13 +15,14 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 builder.Services.AddDbContext<ArtifexDbContext>(options =>
     options.UseMySql(connectionString,
-        ServerVersion.AutoDetect(connectionString),
-        // Add this configuration lambda:
+        // ? FIX #1: Remove AutoDetect. Hardcode the version to stop startup crashes.
+        new MySqlServerVersion(new Version(8, 0, 29)),
+
         mySqlOptions =>
         {
             mySqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,                    // Try 5 times before failing
-                maxRetryDelay: TimeSpan.FromSeconds(10), // Wait up to 10s between tries
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
                 errorNumbersToAdd: null
             );
         }
@@ -30,32 +31,36 @@ builder.Services.AddDbContext<ArtifexDbContext>(options =>
 // ----------------------
 // Controllers
 // ----------------------
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    }); builder.Services.AddEndpointsApiExplorer();
 
 // ----------------------
 // Swagger
 // ----------------------
 builder.Services.AddSwaggerGen(options =>
 {
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Type = SecuritySchemeType.ApiKey,
         Scheme = "Bearer",
         BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        In = ParameterLocation.Header,
         Description = "Enter: Bearer {your token}"
     });
 
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            new OpenApiSecurityScheme
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                Reference = new OpenApiReference
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Type = ReferenceType.SecurityScheme,
                     Id = "Bearer"
                 }
             },
@@ -64,14 +69,12 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-
 // ----------------------
 // Password Hasher
 // ----------------------
 builder.Services.AddSingleton<
     Microsoft.AspNetCore.Identity.IPasswordHasher<User>,
     Microsoft.AspNetCore.Identity.PasswordHasher<User>>();
-
 
 // ----------------------
 // JWT Authentication
@@ -98,21 +101,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-
 builder.Services.AddAuthorization();
 
 // ----------------------
 // CORS for Frontend
 // ----------------------
-
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
+    // ? FIX #2: Allow All Origins. This prevents "CORS Errors" while debugging.
+    options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
-              .AllowAnyHeader()
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyHeader();
     });
 });
 
@@ -124,8 +125,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// ORDER MATTERS
-app.UseCors("AllowFrontend");
+// ? Use the new "AllowAll" policy
+app.UseCors("AllowAll");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
