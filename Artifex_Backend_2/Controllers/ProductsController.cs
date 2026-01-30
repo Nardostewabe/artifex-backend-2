@@ -251,15 +251,39 @@ namespace Artifex_Backend_2.Controllers
             return NoContent();
         }
 
+        // [PUT] Edit Product
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutProduct(int id, [FromBody] Product product)
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")] // ✅ Only Sellers can edit
+        public async Task<IActionResult> PutProduct(int id, [FromBody] ProductUpdateDto dto) // ✅ Use a DTO, not the raw Product
         {
-            if (id != product.Id)
+            // 1. Get the current user
+            var userIdString = User.FindFirstValue("id");
+            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized("Invalid token.");
+
+            // 2. Find the Seller Profile
+            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (seller == null) return Forbid("Seller profile not found.");
+
+            // 3. Find the Product
+            var product = await _context.Products.FindAsync(id);
+            if (product == null) return NotFound("Product not found.");
+
+            // 4. SECURITY CHECK: Does this seller own this product?
+            if (product.SellerId != seller.Id)
             {
-                return BadRequest("Product ID mismatch");
+                return Forbid("You do not own this product!");
             }
 
-            _context.Entry(product).State = EntityState.Modified;
+            // 5. Update only the allowed fields
+            product.Name = dto.Name;
+            product.Description = dto.Description;
+            product.Price = dto.Price;
+            product.StockQuantity = dto.StockQuantity;
+            product.StockStatus = dto.StockStatus;
+
+            // (Optional) Update tags/tutorial if provided
+            if (!string.IsNullOrEmpty(dto.Tags)) product.Tags = dto.Tags;
+            if (!string.IsNullOrEmpty(dto.TutorialLink)) product.TutorialLink = dto.TutorialLink;
 
             try
             {
@@ -267,17 +291,11 @@ namespace Artifex_Backend_2.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!_context.Products.Any(e => e.Id == id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                if (!_context.Products.Any(e => e.Id == id)) return NotFound();
+                else throw;
             }
 
-            return NoContent();
+            return Ok(new { message = "Product updated successfully!" });
         }
     }
 }
