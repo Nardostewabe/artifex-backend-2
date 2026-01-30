@@ -14,9 +14,9 @@ namespace Artifex_Backend_2.Services
     public class EmailService : IEmailService
     {
         private readonly IConfiguration _config;
-        private readonly ILogger _logger;
+        private readonly ILogger<EmailService> _logger;
 
-        public EmailService(IConfiguration config,ILogger logger)
+        public EmailService(IConfiguration config,ILogger<EmailService> logger)
         {
             _config = config;
             _logger = logger;

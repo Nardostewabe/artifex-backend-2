@@ -1,7 +1,10 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Artifex_Backend_2.Data
+
 {
     public class ArtifexDbContext : DbContext
     {

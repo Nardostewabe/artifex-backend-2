@@ -1,11 +1,10 @@
 ﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
-using Artifex_Backend_2.Services;
+using Artifex_Backend_2.Services; // ✅ Ensure this is here for IEmailService
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -20,8 +19,9 @@ namespace Artifex_Backend_2.Controllers
         private readonly ArtifexDbContext _db;
         private readonly IPasswordHasher<User> _hasher;
         private readonly IConfiguration _config;
-        private readonly IEmailService _emailService;
+        private readonly IEmailService _emailService; // ✅ Added missing field
 
+        // ✅ Updated Constructor to accept IEmailService
         public AuthController(ArtifexDbContext db, IPasswordHasher<User> hasher, IConfiguration config, IEmailService emailService)
         {
             _db = db;
@@ -32,6 +32,11 @@ namespace Artifex_Backend_2.Controllers
 
         private string GenerateJwtToken(User user)
         {
+            // Robust key retrieval for both Local and Render
+            var secretKey = _config["Jwt:Key"] ?? _config["Jwt__Key"];
+            var issuer = _config["Jwt:Issuer"] ?? _config["Jwt__Issuer"];
+            var audience = _config["Jwt:Audience"] ?? _config["Jwt__Audience"];
+
             var claims = new[]
             {
                 new Claim("id", user.Id.ToString()),
@@ -40,12 +45,12 @@ namespace Artifex_Backend_2.Controllers
                 new Claim(ClaimTypes.Role, ((int)user.Role).ToString())
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                issuer: issuer,
+                audience: audience,
                 claims: claims,
                 expires: DateTime.UtcNow.AddHours(24),
                 signingCredentials: creds
@@ -86,6 +91,7 @@ namespace Artifex_Backend_2.Controllers
 
             var token = GenerateJwtToken(user);
 
+            // Return safe object to avoid loops
             return Ok(new
             {
                 message = "Signup successful.",
@@ -106,14 +112,12 @@ namespace Artifex_Backend_2.Controllers
             }
 
             var user = await _db.Users
-      .FirstOrDefaultAsync(u => u.Username == dto.UsernameOrEmail || u.Email == dto.UsernameOrEmail);
+                .FirstOrDefaultAsync(u => u.Username == dto.UsernameOrEmail || u.Email == dto.UsernameOrEmail);
 
-            // 1. CRITICAL: Check for null FIRST.
-            // If this is null, we must stop immediately.
             if (user == null)
                 return Unauthorized("User not found.");
 
-            // 2. Now it is safe to access user.Role
+            // Check Seller Approval
             bool isApproved = false;
             if (user.Role == UserRole.Seller)
             {
@@ -124,58 +128,68 @@ namespace Artifex_Backend_2.Controllers
                 }
             }
 
-            // ... continue with password check ...
             var result = _hasher.VerifyHashedPassword(user, user.PasswordHash, dto.Password);
             if (result == PasswordVerificationResult.Failed)
                 return Unauthorized("Invalid password.");
 
             var token = GenerateJwtToken(user);
 
+            // ✅ SAFE RETURN OBJECT (Prevents 500 Infinite Loop Error)
             return Ok(new
             {
                 message = "Login successful.",
                 token = token,
-                user = new { user.Id, user.Username, user.Email, user.Role, IsApproved = isApproved }
+                user = new
+                {
+                    user.Id,
+                    user.Username,
+                    user.Email,
+                    user.Role,
+                    IsApproved = isApproved
+                }
             });
         }
 
+        // ---------------- Forgot Password ----------------
 
-    [HttpPost("forgot-password")]
+        [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
         {
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
             if (user == null)
             {
-                // Security: Don't reveal if email exists or not. Just say "If email exists..."
                 return Ok(new { message = "If an account exists with this email, a reset link has been sent." });
             }
 
             // Generate Token
             var token = Guid.NewGuid().ToString();
             user.PasswordResetToken = token;
-            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1); // Valid for 1 hour
+            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
 
             await _db.SaveChangesAsync();
 
-            // Create Link (Frontend URL)
-            // Assumes your React app runs on port 5173
-            var resetLink = $"http://localhost:5173/reset-password?token={token}";
+            // ✅ FIX: Use dynamic Frontend URL for Production vs Local
+            var frontendUrl = "https://artifex-frontend.onrender.com"; // Default to Live
 
-            // Send Email
+            // If testing locally, you can uncomment this line:
+            // frontendUrl = "http://localhost:5173"; 
+
+            var resetLink = $"{frontendUrl}/reset-password?token={token}";
+
             var emailBody = $@"
                 <h1>Password Reset Request</h1>
                 <p>Click the link below to reset your password:</p>
                 <p><a href='{resetLink}'>Reset Password</a></p>
                 <p>This link expires in 1 hour.</p>";
 
+            // Now _emailService is properly injected and will work
             await _emailService.SendEmailAsync(user.Email, "Reset Your Password", emailBody);
 
             return Ok(new { message = "If an account exists with this email, a reset link has been sent." });
         }
 
-        // ---------------------------------------------------------
-        // 2. Reset Password (Submit New Password)
-        // ---------------------------------------------------------
+        // ---------------- Reset Password ----------------
+
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
         {
@@ -186,10 +200,7 @@ namespace Artifex_Backend_2.Controllers
                 return BadRequest("Invalid or expired password reset token.");
             }
 
-            // Hash the new password
             user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);
-
-            // Clear the token so it can't be used again
             user.PasswordResetToken = null;
             user.PasswordResetTokenExpiry = null;
 
