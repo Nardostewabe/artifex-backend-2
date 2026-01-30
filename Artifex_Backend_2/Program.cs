@@ -108,6 +108,9 @@ builder.Services.AddScoped<Artifex_Backend_2.Services.IEmailService, Artifex_Bac
 
 builder.Services.AddAuthorization();
 
+// Register HttpClient for Chapa
+builder.Services.AddHttpClient<Artifex_Backend_2.Services.IChapaService, Artifex_Backend_2.Services.ChapaService>();
+
 // ----------------------
 // CORS for Frontend
 // ----------------------
