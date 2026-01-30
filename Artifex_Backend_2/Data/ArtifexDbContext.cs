@@ -15,7 +15,11 @@ namespace Artifex_Backend_2.Data
         public DbSet<Category> Categories { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<Review> Reviews { get; set; }
-
+        public DbSet<Dispute> Disputes { get; set; }
+        public DbSet<Report> UserReports { get; set; }
+        public DbSet<ContentAdmin> ContentAdmins { get; set; }
+        public DbSet<Report> Reports { get; set; }
+        public DbSet<Favorite> Favorites { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

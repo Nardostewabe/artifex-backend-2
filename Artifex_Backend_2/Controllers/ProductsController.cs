@@ -196,13 +196,14 @@ namespace Artifex_Backend_2.Controllers
         }
 
         // [GET] Public Product Details
-        [AllowAnonymous] // ✅ Ensure anyone can view details
+        // ✅ Ensure anyone can view details
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProductById(int id)
         {
             var product = await _context.Products
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
+                .Include(p => p.Seller)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (product == null) return NotFound("Product not found.");
@@ -290,6 +291,20 @@ namespace Artifex_Backend_2.Controllers
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
                 .ToListAsync();
+        }
+
+        // [GET] Products by Specific Seller (Public Shop Page)
+        [HttpGet("seller/{sellerId}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetProductsBySeller(Guid sellerId)
+        {
+            var products = await _context.Products
+                .Where(p => p.SellerId == sellerId)
+                .Include(p => p.Images)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+
+            return Ok(products);
         }
     }
 }

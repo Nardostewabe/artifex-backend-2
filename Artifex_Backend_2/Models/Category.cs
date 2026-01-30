@@ -1,7 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
-
 
 namespace Artifex_Backend_2.Models
 {
@@ -13,6 +11,7 @@ namespace Artifex_Backend_2.Models
         [Required]
         [MaxLength(100)]
         public string Name { get; set; }
+        public string? ImageUrl { get; set; }
         [JsonIgnore]
         public virtual ICollection<Product> Products { get; set; } = new List<Product>();
     }

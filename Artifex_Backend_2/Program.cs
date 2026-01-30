@@ -101,6 +101,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+// ----------------------
+// Services
+// ----------------------
+builder.Services.AddScoped<Artifex_Backend_2.Services.IEmailService, Artifex_Backend_2.Services.EmailService>();
+
 builder.Services.AddAuthorization();
 
 // ----------------------

@@ -4,6 +4,7 @@ using Artifex_Backend_2.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Artifex_Backend_2.Migrations
 {
     [DbContext(typeof(ArtifexDbContext))]
-    partial class ArtifexDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260129121330_AddPasswordResetFields")]
+    partial class AddPasswordResetFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -420,9 +423,6 @@ namespace Artifex_Backend_2.Migrations
                         .IsRequired()
                         .HasMaxLength(320)
                         .HasColumnType("varchar(320)");
-
-                    b.Property<bool>("IsSuspended")
-                        .HasColumnType("tinyint(1)");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()

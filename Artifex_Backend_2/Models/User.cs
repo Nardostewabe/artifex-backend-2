@@ -33,5 +33,8 @@ namespace Artifex_Backend_2.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public Seller SellerProfile { get; set; }
         public Customer CustomerProfile { get; set; }
+        public string? PasswordResetToken { get; set; }
+        public DateTime? PasswordResetTokenExpiry { get; set; }
+        public bool IsSuspended { get; set; } = false;
     }
 }

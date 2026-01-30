@@ -4,6 +4,7 @@ using Artifex_Backend_2.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Artifex_Backend_2.Migrations
 {
     [DbContext(typeof(ArtifexDbContext))]
-    partial class ArtifexDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260124191127_AddedDisputesReportsAndContentAdmin")]
+    partial class AddedDisputesReportsAndContentAdmin
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -29,9 +32,6 @@ namespace Artifex_Backend_2.Migrations
                         .HasColumnType("int");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ImageUrl")
-                        .HasColumnType("longtext");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -142,32 +142,6 @@ namespace Artifex_Backend_2.Migrations
                     b.HasIndex("OrderId");
 
                     b.ToTable("Disputes");
-                });
-
-            modelBuilder.Entity("Artifex_Backend_2.Models.Favorite", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<int>("ProductId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("char(36)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("Favorites");
                 });
 
             modelBuilder.Entity("Artifex_Backend_2.Models.Order", b =>
@@ -281,53 +255,6 @@ namespace Artifex_Backend_2.Migrations
                     b.ToTable("ProductImages");
                 });
 
-            modelBuilder.Entity("Artifex_Backend_2.Models.Report", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<Guid>("ReporterId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.Property<int?>("TargetProductId")
-                        .HasColumnType("int");
-
-                    b.Property<Guid?>("TargetSellerId")
-                        .HasColumnType("char(36)");
-
-                    b.Property<string>("TargetType")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReporterId");
-
-                    b.HasIndex("TargetProductId");
-
-                    b.HasIndex("TargetSellerId");
-
-                    b.ToTable("Report");
-                });
-
             modelBuilder.Entity("Artifex_Backend_2.Models.Review", b =>
                 {
                     b.Property<int>("Id")
@@ -421,18 +348,9 @@ namespace Artifex_Backend_2.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("varchar(320)");
 
-                    b.Property<bool>("IsSuspended")
-                        .HasColumnType("tinyint(1)");
-
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("longtext");
-
-                    b.Property<string>("PasswordResetToken")
-                        .HasColumnType("longtext");
-
-                    b.Property<DateTime?>("PasswordResetTokenExpiry")
-                        .HasColumnType("datetime(6)");
 
                     b.Property<int>("Role")
                         .HasColumnType("int");
@@ -451,6 +369,38 @@ namespace Artifex_Backend_2.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Artifex_Backend_2.Models.UserReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<Guid>("ReportedUserId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("ReporterId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportedUserId");
+
+                    b.ToTable("UserReports");
                 });
 
             modelBuilder.Entity("CategoryProduct", b =>
@@ -509,25 +459,6 @@ namespace Artifex_Backend_2.Migrations
                     b.Navigation("Order");
                 });
 
-            modelBuilder.Entity("Artifex_Backend_2.Models.Favorite", b =>
-                {
-                    b.HasOne("Artifex_Backend_2.Models.Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Artifex_Backend_2.Models.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Product");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Artifex_Backend_2.Models.Order", b =>
                 {
                     b.HasOne("Artifex_Backend_2.Models.Customer", "Buyer")
@@ -569,29 +500,6 @@ namespace Artifex_Backend_2.Migrations
                     b.Navigation("Product");
                 });
 
-            modelBuilder.Entity("Artifex_Backend_2.Models.Report", b =>
-                {
-                    b.HasOne("Artifex_Backend_2.Models.User", "Reporter")
-                        .WithMany()
-                        .HasForeignKey("ReporterId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Artifex_Backend_2.Models.Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("TargetProductId");
-
-                    b.HasOne("Artifex_Backend_2.Models.Seller", "Seller")
-                        .WithMany()
-                        .HasForeignKey("TargetSellerId");
-
-                    b.Navigation("Product");
-
-                    b.Navigation("Reporter");
-
-                    b.Navigation("Seller");
-                });
-
             modelBuilder.Entity("Artifex_Backend_2.Models.Review", b =>
                 {
                     b.HasOne("Artifex_Backend_2.Models.Customer", "Customer")
@@ -620,6 +528,17 @@ namespace Artifex_Backend_2.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Artifex_Backend_2.Models.UserReport", b =>
+                {
+                    b.HasOne("Artifex_Backend_2.Models.User", "ReportedUser")
+                        .WithMany()
+                        .HasForeignKey("ReportedUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReportedUser");
                 });
 
             modelBuilder.Entity("CategoryProduct", b =>

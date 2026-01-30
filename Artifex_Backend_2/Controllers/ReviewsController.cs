@@ -33,7 +33,7 @@ namespace Artifex_Backend_2.Controllers
                     UserName = r.Customer.FullName ?? "Anonymous",
                     Rating = r.Rating,
                     Comment = r.Comment,
-                    Date = r.CreatedAt.ToString("MM/dd/yyyy")
+                    Date = r.CreatedAt.ToString("MM/dd/yyyy") 
                 })
                 .ToListAsync();
 
@@ -100,6 +100,64 @@ namespace Artifex_Backend_2.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { message = "Review submitted successfully!" });
+        }
+        [Authorize]
+        [HttpPut("{id}")]
+        public async Task<IActionResult> EditReview(int id, [FromBody] UpdateReviewDto dto)
+        {
+            // 1. Identify the User
+            var userIdString = User.FindFirstValue("id");
+            if (string.IsNullOrEmpty(userIdString)) return Unauthorized();
+            var userId = Guid.Parse(userIdString);
+
+            // 2. Find the Customer Profile
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.UserId == userId);
+            if (customer == null) return Unauthorized("Customer profile not found.");
+
+            // 3. Find the Review
+            var review = await _context.Reviews.FindAsync(id);
+            if (review == null) return NotFound("Review not found.");
+
+            // 4. Security Check: Ensure the logged-in customer owns this review
+            if (review.CustomerId != customer.Id)
+            {
+                return Forbid(); // Return 403 if they try to edit someone else's review
+            }
+
+            // 5. Update the Fields
+            review.Rating = dto.Rating;
+            review.Comment = dto.Comment;
+            // Optional: review.UpdatedAt = DateTime.UtcNow; (If you have this column)
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Review updated successfully." });
+        }
+
+        // 5. DELETE: api/Reviews/{id}
+        [Authorize]
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteReview(int id)
+        {
+            var userIdString = User.FindFirstValue("id");
+            var userId = Guid.Parse(userIdString);
+
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.UserId == userId);
+            var review = await _context.Reviews.FindAsync(id);
+
+            if (review == null) return NotFound();
+
+            // Check Ownership (or if User is Admin)
+            if (customer == null || review.CustomerId != customer.Id)
+            {
+                // Allow Platform Admins to delete reviews too
+                if (!User.IsInRole("4")) return Forbid();
+            }
+
+            _context.Reviews.Remove(review);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Review deleted." });
         }
     }
 }

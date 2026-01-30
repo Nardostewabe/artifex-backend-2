@@ -1,14 +1,15 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Artifex_Backend_2.Data;
-using Artifex_Backend_2.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using System.Text;
-using Microsoft.IdentityModel.Tokens;
-using System.Security.Claims;
-using System.IdentityModel.Tokens.Jwt;
+﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.DTOs;
+using Artifex_Backend_2.Models;
+using Artifex_Backend_2.Services;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace Artifex_Backend_2.Controllers
 {
@@ -19,12 +20,14 @@ namespace Artifex_Backend_2.Controllers
         private readonly ArtifexDbContext _db;
         private readonly IPasswordHasher<User> _hasher;
         private readonly IConfiguration _config;
+        private readonly IEmailService _emailService;
 
-        public AuthController(ArtifexDbContext db, IPasswordHasher<User> hasher, IConfiguration config)
+        public AuthController(ArtifexDbContext db, IPasswordHasher<User> hasher, IConfiguration config, IEmailService emailService)
         {
             _db = db;
             _hasher = hasher;
             _config = config;
+            _emailService = emailService;
         }
 
         private string GenerateJwtToken(User user)
@@ -134,6 +137,65 @@ namespace Artifex_Backend_2.Controllers
                 token = token,
                 user = new { user.Id, user.Username, user.Email, user.Role, IsApproved = isApproved }
             });
+        }
+
+
+    [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            if (user == null)
+            {
+                // Security: Don't reveal if email exists or not. Just say "If email exists..."
+                return Ok(new { message = "If an account exists with this email, a reset link has been sent." });
+            }
+
+            // Generate Token
+            var token = Guid.NewGuid().ToString();
+            user.PasswordResetToken = token;
+            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1); // Valid for 1 hour
+
+            await _db.SaveChangesAsync();
+
+            // Create Link (Frontend URL)
+            // Assumes your React app runs on port 5173
+            var resetLink = $"http://localhost:5173/reset-password?token={token}";
+
+            // Send Email
+            var emailBody = $@"
+                <h1>Password Reset Request</h1>
+                <p>Click the link below to reset your password:</p>
+                <p><a href='{resetLink}'>Reset Password</a></p>
+                <p>This link expires in 1 hour.</p>";
+
+            await _emailService.SendEmailAsync(user.Email, "Reset Your Password", emailBody);
+
+            return Ok(new { message = "If an account exists with this email, a reset link has been sent." });
+        }
+
+        // ---------------------------------------------------------
+        // 2. Reset Password (Submit New Password)
+        // ---------------------------------------------------------
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(u => u.PasswordResetToken == dto.Token);
+
+            if (user == null || user.PasswordResetTokenExpiry < DateTime.UtcNow)
+            {
+                return BadRequest("Invalid or expired password reset token.");
+            }
+
+            // Hash the new password
+            user.PasswordHash = _hasher.HashPassword(user, dto.NewPassword);
+
+            // Clear the token so it can't be used again
+            user.PasswordResetToken = null;
+            user.PasswordResetTokenExpiry = null;
+
+            await _db.SaveChangesAsync();
+
+            return Ok(new { message = "Password has been reset successfully. You can now login." });
         }
     }
 }
