@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 // ----------------------
 // 1. Secrets Check
 // ----------------------
-var chapaKey = builder.Configuration["Chapa:SecretKey"] ?? builder.Configuration["CHAPA_SECRET_KEY"];
+var chapaKey = builder.Configuration["Chapa:SecretKey"] ?? builder.Configuration["Chapa__SecretKey"];
 if (string.IsNullOrEmpty(chapaKey))
 {
     Console.WriteLine("⚠️ Warning: Chapa Secret Key is missing!");
@@ -34,8 +34,7 @@ builder.Services.AddDbContext<ArtifexDbContext>(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.ReferenceHandler =
-            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
 builder.Services.AddEndpointsApiExplorer();

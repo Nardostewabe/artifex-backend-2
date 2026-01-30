@@ -28,6 +28,7 @@ namespace Artifex_Backend_2.Services
             {
                 // 1. Read Settings
                 
+      
                 var host = _config["Smtp:Host"] ?? _config["Smtp__Host"];
                 var port = int.TryParse(_config["Smtp:Port"] ?? _config["Smtp__Port"], out int p) ? p : 587;
                 var email = _config["Smtp:Username"] ?? _config["Smtp__Username"];
