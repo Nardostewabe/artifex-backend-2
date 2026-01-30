@@ -1,7 +1,7 @@
 ﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
-using Artifex_Backend_2.Services;
+using Artifex_Backend_2.Services; // ✅ Required for IInvoiceService
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,28 +16,29 @@ namespace Artifex_Backend_2.Controllers
     {
         private readonly ArtifexDbContext _db;
         private readonly IChapaService _chapaService;
+        private readonly IInvoiceService _invoiceService; // ✅ 1. Add Service Field
 
-        public PaymentController(ArtifexDbContext db, IChapaService chapaService)
+        // ✅ 2. Inject IInvoiceService in Constructor
+        public PaymentController(ArtifexDbContext db, IChapaService chapaService, IInvoiceService invoiceService)
         {
             _db = db;
             _chapaService = chapaService;
+            _invoiceService = invoiceService;
         }
 
-        // 1. Initialize Payment
+        // 1. Initialize Payment (Kept exactly as you had it)
         [HttpPost("initialize")]
         public async Task<IActionResult> InitializePayment([FromBody] InitializePaymentDto dto)
         {
             var userId = Guid.Parse(User.FindFirst("id")?.Value);
-            var txRef = "TX-" + Guid.NewGuid().ToString().Substring(0, 8); // Unique Ref
+            var txRef = "TX-" + Guid.NewGuid().ToString().Substring(0, 8);
 
             try
             {
-                // Call Chapa API
                 var checkoutUrl = await _chapaService.InitializeTransaction(
                     txRef, dto.Amount, dto.Email, dto.FirstName, dto.LastName
                 );
 
-                // Save Pending Payment to DB
                 var payment = new Payment
                 {
                     UserId = userId,
@@ -59,20 +60,18 @@ namespace Artifex_Backend_2.Controllers
             }
         }
 
-        // 2. Verify Payment (Called by Frontend after redirection)
+        // 2. Verify Payment (Kept exactly as you had it)
         [HttpGet("verify/{txRef}")]
         public async Task<IActionResult> VerifyPayment(string txRef)
         {
             var payment = await _db.Payments.FirstOrDefaultAsync(p => p.TxRef == txRef);
             if (payment == null) return NotFound("Transaction not found");
 
-            // Check status with Chapa
             bool isSuccessful = await _chapaService.VerifyTransaction(txRef);
 
             if (isSuccessful)
             {
                 payment.Status = "Success";
-                // TODO: Add logic here to enable features (e.g., Approve Subscription)
             }
             else
             {
@@ -81,6 +80,27 @@ namespace Artifex_Backend_2.Controllers
 
             await _db.SaveChangesAsync();
             return Ok(new { status = payment.Status });
+        }
+
+        // ✅ 3. NEW: Download Invoice Endpoint
+        [HttpGet("{txRef}/invoice")]
+        public async Task<IActionResult> DownloadInvoice(string txRef)
+        {
+            // We include the User to get their name for the "Bill To" section
+            var payment = await _db.Payments
+                .Include(p => p.User)
+                .FirstOrDefaultAsync(p => p.TxRef == txRef);
+
+            if (payment == null) return NotFound("Payment not found.");
+
+            // Optional: Only allow downloading if payment was successful
+            if (payment.Status != "Success") return BadRequest("Cannot generate invoice for unpaid transaction.");
+
+            // Generate the PDF bytes
+            var pdfBytes = _invoiceService.GenerateInvoice(payment, payment.User);
+
+            // Return as a downloadable file
+            return File(pdfBytes, "application/pdf", $"Invoice-{txRef}.pdf");
         }
     }
 }
