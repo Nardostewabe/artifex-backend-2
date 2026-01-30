@@ -9,15 +9,25 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ----------------------
-// Database
+// 1. Configuration & Secrets Check
+// ----------------------
+// This pulls from appsettings.json in dev, or Environment Variables in production
+var chapaKey = builder.Configuration["CHAPA_SECRET_KEY"];
+
+if (string.IsNullOrEmpty(chapaKey)) 
+{
+    // Log a warning if the key is missing; crucial for debugging Render deployments
+    Console.WriteLine("Warning: CHAPA_SECRET_KEY is missing! Payment features will fail.");
+}
+
+// ----------------------
+// 2. Database (MySQL)
 // ----------------------
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddDbContext<ArtifexDbContext>(options =>
     options.UseMySql(connectionString,
-        // ? FIX #1: Remove AutoDetect. Hardcode the version to stop startup crashes.
         new MySqlServerVersion(new Version(8, 0, 29)),
-
         mySqlOptions =>
         {
             mySqlOptions.EnableRetryOnFailure(
@@ -29,17 +39,20 @@ builder.Services.AddDbContext<ArtifexDbContext>(options =>
     ));
 
 // ----------------------
-// Controllers
+// 3. Controllers & JSON Options
 // ----------------------
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
+        // Prevents circular reference errors when including Sellers/Categories
         options.JsonSerializerOptions.ReferenceHandler =
             System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
-    }); builder.Services.AddEndpointsApiExplorer();
+    });
+
+builder.Services.AddEndpointsApiExplorer();
 
 // ----------------------
-// Swagger
+// 4. Swagger
 // ----------------------
 builder.Services.AddSwaggerGen(options =>
 {
@@ -70,17 +83,14 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ----------------------
-// Password Hasher
+// 5. Identity & JWT Authentication
 // ----------------------
 builder.Services.AddSingleton<
     Microsoft.AspNetCore.Identity.IPasswordHasher<User>,
     Microsoft.AspNetCore.Identity.PasswordHasher<User>>();
 
-// ----------------------
-// JWT Authentication
-// ----------------------
 var jwtSection = builder.Configuration.GetSection("Jwt");
-var jwtKey = jwtSection.GetValue<string>("Key")!;
+var jwtKey = jwtSection.GetValue<string>("Key") ?? "TemporaryDefaultKeyForDevelopmentOnly";
 var issuer = jwtSection.GetValue<string>("Issuer") ?? "Artifex";
 var audience = jwtSection.GetValue<string>("Audience") ?? "ArtifexUsers";
 
@@ -101,22 +111,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// ----------------------
-// Services
-// ----------------------
-builder.Services.AddScoped<Artifex_Backend_2.Services.IEmailService, Artifex_Backend_2.Services.EmailService>();
-
 builder.Services.AddAuthorization();
 
 // Register HttpClient for Chapa
 builder.Services.AddHttpClient<Artifex_Backend_2.Services.IChapaService, Artifex_Backend_2.Services.ChapaService>();
 
 // ----------------------
-// CORS for Frontend
+// 6. Services & CORS
 // ----------------------
+builder.Services.AddScoped<Artifex_Backend_2.Services.IEmailService, Artifex_Backend_2.Services.EmailService>();
+
 builder.Services.AddCors(options =>
 {
-    // ? FIX #2: Allow All Origins. This prevents "CORS Errors" while debugging.
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
@@ -127,18 +133,25 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ----------------------
+// 7. Middleware Pipeline
+// ----------------------
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// ? Use the new "AllowAll" policy
 app.UseCors("AllowAll");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
+
+// ----------------------
+// 8. Render Port Binding Fix
+// ----------------------
+// Render injects a PORT variable; this ensures the app listens to it
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+app.Urls.Add($"http://0.0.0.0:{port}");
 
 app.Run();

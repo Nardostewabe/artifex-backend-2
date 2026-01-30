@@ -18,8 +18,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Tell ASP.NET to listen on the port Render gives us
-ENV ASPNETCORE_URLS=http://+:8080
+# FIX: Change the URL binding to 0.0.0.0
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 
-# Start the app
+# EXPOSE is good practice to tell Render which port to map
+EXPOSE 8080
+
 ENTRYPOINT ["dotnet", "Artifex_Backend_2.dll"]
