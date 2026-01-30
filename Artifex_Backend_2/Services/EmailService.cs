@@ -1,22 +1,21 @@
 ﻿using System.Net;
 using System.Net.Mail;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Artifex_Backend_2.Services
 {
-    // Interface
     public interface IEmailService
     {
         Task SendEmailAsync(string toEmail, string subject, string body);
     }
 
-    // Implementation
     public class EmailService : IEmailService
     {
         private readonly IConfiguration _config;
         private readonly ILogger<EmailService> _logger;
 
-        public EmailService(IConfiguration config,ILogger<EmailService> logger)
+        public EmailService(IConfiguration config, ILogger<EmailService> logger)
         {
             _config = config;
             _logger = logger;
@@ -26,16 +25,23 @@ namespace Artifex_Backend_2.Services
         {
             try
             {
-                // 1. Read Settings
-                
-      
+                // 1. Read Settings (Checks both Local ':' and Render '__')
                 var host = _config["Smtp:Host"] ?? _config["Smtp__Host"];
-                var port = int.TryParse(_config["Smtp:Port"] ?? _config["Smtp__Port"], out int p) ? p : 587;
+                var portStr = _config["Smtp:Port"] ?? _config["Smtp__Port"];
                 var email = _config["Smtp:Username"] ?? _config["Smtp__Username"];
                 var password = _config["Smtp:Password"] ?? _config["Smtp__Password"];
 
+                if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
+                {
+                    _logger.LogError("❌ Email Config Missing. Check Render Environment Variables.");
+                    return;
+                }
+
+                // Default to port 587 if missing (Best for Gmail)
+                var port = int.TryParse(portStr, out int p) ? p : 587;
+
                 // 2. Configure Client
-                var client = new SmtpClient(host, port)
+                using var client = new SmtpClient(host, port)
                 {
                     Credentials = new NetworkCredential(email, password),
                     EnableSsl = true
@@ -53,22 +59,17 @@ namespace Artifex_Backend_2.Services
 
                 // 4. Send
                 await client.SendMailAsync(mailMessage);
-                Console.WriteLine($"[EmailService] Sent to {toEmail}");
+                _logger.LogInformation($"✅ Email sent to {toEmail}");
             }
             catch (Exception ex)
             {
-                // 👇 THIS IS THE CRITICAL CHANGE 👇
-                _logger.LogError($"❌ EMAIL FAILED to {toEmail}");
-                _logger.LogError($"➡️ Main Error: {ex.Message}");
-
+                // ✅ CRITICAL FIX: We Log the error, but we DO NOT 'throw' it.
+                // This stops the 500 Internal Server Error.
+                _logger.LogError($"❌ FAILED TO SEND EMAIL: {ex.Message}");
                 if (ex.InnerException != null)
                 {
-                    _logger.LogError($"➡️ 🕵️ INNER EXCEPTION (The Real Cause): {ex.InnerException.Message}");
-                    _logger.LogError($"➡️ Inner Stack: {ex.InnerException.StackTrace}");
+                    _logger.LogError($"➡️ Inner Error: {ex.InnerException.Message}");
                 }
-
-                // Don't crash the app, just log it
-                throw;
             }
         }
     }
