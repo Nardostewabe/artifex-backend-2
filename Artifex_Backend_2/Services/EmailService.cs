@@ -1,5 +1,6 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Mail;
+using Microsoft.Extensions.Logging;
 
 namespace Artifex_Backend_2.Services
 {
@@ -13,10 +14,12 @@ namespace Artifex_Backend_2.Services
     public class EmailService : IEmailService
     {
         private readonly IConfiguration _config;
+        private readonly ILogger _logger;
 
-        public EmailService(IConfiguration config)
+        public EmailService(IConfiguration config,ILogger logger)
         {
             _config = config;
+            _logger = logger;
         }
 
         public async Task SendEmailAsync(string toEmail, string subject, string body)
@@ -25,7 +28,7 @@ namespace Artifex_Backend_2.Services
             {
                 // 1. Read Settings
                 var host = _config["Smtp:Host"];
-                var port = int.Parse(_config["Smtp:Port"]);
+                var port = int.TryParse(_config["Smtp:Port"] ?? _config["Smtp__Port"], out int p) ? p : 587;
                 var email = _config["Smtp:Username"];
                 var password = _config["Smtp:Password"];
 
@@ -52,8 +55,18 @@ namespace Artifex_Backend_2.Services
             }
             catch (Exception ex)
             {
-                // This prints the error to your console if it fails
-                Console.WriteLine($"[EmailService] Error: {ex.Message}");
+                // 👇 THIS IS THE CRITICAL CHANGE 👇
+                _logger.LogError($"❌ EMAIL FAILED to {toEmail}");
+                _logger.LogError($"➡️ Main Error: {ex.Message}");
+
+                if (ex.InnerException != null)
+                {
+                    _logger.LogError($"➡️ 🕵️ INNER EXCEPTION (The Real Cause): {ex.InnerException.Message}");
+                    _logger.LogError($"➡️ Inner Stack: {ex.InnerException.StackTrace}");
+                }
+
+                // Don't crash the app, just log it
+                throw;
             }
         }
     }
