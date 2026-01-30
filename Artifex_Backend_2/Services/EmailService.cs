@@ -1,5 +1,6 @@
 ﻿using MimeKit;
 using MailKit.Net.Smtp;
+using MailKit.Security; // Needed for SecureSocketOptions
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
@@ -26,21 +27,19 @@ namespace Artifex_Backend_2.Services
         {
             try
             {
-                // 1. Get Config
-                var host = _config["Smtp:Host"] ?? _config["Smtp__Host"];
-                var portStr = _config["Smtp:Port"] ?? _config["Smtp__Port"];
+                var host = "smtp.gmail.com";
+                var port = 465; // ✅ SWITCH TO PORT 465 (SSL)
+
                 var username = _config["Smtp:Username"] ?? _config["Smtp__Username"];
                 var password = _config["Smtp:Password"] ?? _config["Smtp__Password"];
 
-                if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
                 {
-                    _logger.LogError("❌ Email Config Missing in Render Environment.");
+                    _logger.LogError("❌ Email Credentials Missing.");
                     return;
                 }
 
-                var port = int.TryParse(portStr, out int p) ? p : 587;
-
-                // 2. Create Message (MimeKit)
+                // Create Message
                 var emailMessage = new MimeMessage();
                 emailMessage.From.Add(new MailboxAddress("Artifex Support", username));
                 emailMessage.To.Add(new MailboxAddress("", toEmail));
@@ -49,14 +48,13 @@ namespace Artifex_Backend_2.Services
                 var bodyBuilder = new BodyBuilder { HtmlBody = body };
                 emailMessage.Body = bodyBuilder.ToMessageBody();
 
-                // 3. Send (MailKit SmtpClient)
                 using var client = new SmtpClient();
 
-                // Dangerous: Accept all SSL certs (Fixes handshake errors on Render)
+                // Dangerous: Accept all SSL certs (Needed for some cloud containers)
                 client.ServerCertificateValidationCallback = (s, c, h, e) => true;
 
-                // Connect
-                await client.ConnectAsync(host, port, MailKit.Security.SecureSocketOptions.StartTls);
+                // ✅ CRITICAL CHANGE: Use SslOnConnect for Port 465
+                await client.ConnectAsync(host, port, SecureSocketOptions.SslOnConnect);
 
                 // Authenticate
                 await client.AuthenticateAsync(username, password);
@@ -69,7 +67,8 @@ namespace Artifex_Backend_2.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"❌ MAILKIT FAILED: {ex.Message}");
+                // This logs the error but keeps your site alive
+                _logger.LogError($"❌ MAILKIT FAILED (Port 465): {ex.Message}");
             }
         }
     }
