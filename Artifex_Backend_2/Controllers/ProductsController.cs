@@ -1,4 +1,4 @@
-using Artifex_Backend_2.Data;
+﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.DTOs;
 using Artifex_Backend_2.Models;
 using CloudinaryDotNet;
@@ -6,6 +6,7 @@ using CloudinaryDotNet.Actions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
 
 namespace Artifex_Backend_2.Controllers
@@ -30,7 +31,6 @@ namespace Artifex_Backend_2.Controllers
 
         // [POST] Create Product
         [HttpPost("new-product")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -62,6 +62,7 @@ namespace Artifex_Backend_2.Controllers
                 var categories = await _context.Categories
                     .Where(c => dto.CategoryIds.Contains(c.Id))
                     .ToListAsync();
+
                 product.Categories = categories;
             }
 
@@ -87,63 +88,7 @@ namespace Artifex_Backend_2.Controllers
             return Ok(new { message = "Product created successfully", productId = product.Id });
         }
 
-        // [GET] All Products (Shop Page) - UPDATED FOR SELLER NAME
-        [HttpGet]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetProducts()
-        {
-            var products = await _context.Products
-                .Include(p => p.Images)
-                .Include(p => p.Categories)
-                .Include(p => p.Seller)
-                    .ThenInclude(s => s.User) // ✅ Get the name from the User table
-                .ToListAsync();
-
-            var result = products.Select(p => new {
-                p.Id,
-                p.Name,
-                p.Price,
-                p.Description,
-                Images = p.Images.Select(img => img.Url),
-                SellerName = p.Seller?.ShopName ?? p.Seller?.User?.Username ?? "Unknown Shop",
-                Categories = p.Categories.Select(c => c.Name)
-            });
-
-            return Ok(result);
-        }
-
-        // [GET] Public Product Details - UPDATED FOR MODAL
-        [HttpGet("{id}")]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetProductById(int id)
-        {
-            var product = await _context.Products
-                .Include(p => p.Images)
-                .Include(p => p.Categories)
-                .Include(p => p.Seller)
-                    .ThenInclude(s => s.User) // ✅ JOIN logic for name
-                .FirstOrDefaultAsync(p => p.Id == id);
-
-            if (product == null) return NotFound("Product not found.");
-
-            return Ok(new
-            {
-                product.Id,
-                product.Name,
-                product.Description,
-                product.Price,
-                product.StockQuantity,
-                product.StockStatus,
-                product.TutorialLink,
-                product.Tags,
-                Images = product.Images.Select(img => img.Url),
-                Categories = product.Categories.Select(c => c.Name),
-                SellerName = product.Seller?.ShopName ?? product.Seller?.User?.Username ?? "Unknown Shop",
-                SellerId = product.SellerId
-            });
-        }
-
-        // [GET] My Products (Seller Dashboard)
+        // [GET] My Products (Seller Only)
         [HttpGet("my-products")]
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> GetSellerProducts()
@@ -164,26 +109,140 @@ namespace Artifex_Backend_2.Controllers
             return Ok(products);
         }
 
+        // [DELETE] Delete Product (Seller only)
+        [HttpDelete("{id}")]
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
+        public async Task<IActionResult> DeleteProduct(int id)
+        {
+            var userIdString = User.FindFirstValue("id");
+            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized();
+
+            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (seller == null) return Forbid();
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null) return NotFound();
+
+            if (product.SellerId != seller.Id) return Forbid("You do not own this product.");
+
+            _context.Products.Remove(product);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        // [PUT] Update Product
+        [HttpPut("{id}")]
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
+        public async Task<IActionResult> UpdateProduct(int id, [FromForm] ProductUpdateDto dto)
+        {
+            var userIdString = User.FindFirstValue("id");
+            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized();
+
+            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (seller == null) return Forbid();
+
+            var product = await _context.Products
+                .Include(p => p.Images)
+                .Include(p => p.Categories)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (product == null) return NotFound("Product not found.");
+            if (product.SellerId != seller.Id) return Forbid("You do not own this product.");
+
+            product.Name = dto.Name;
+            product.Description = dto.Description;
+            product.Price = dto.Price;
+            product.StockQuantity = dto.StockQuantity;
+            product.StockStatus = dto.StockStatus;
+            product.Tags = dto.Tags;
+            product.TutorialLink = dto.TutorialLink;
+
+            if (dto.CategoryIds != null)
+            {
+                product.Categories.Clear();
+                var newCategories = await _context.Categories
+                    .Where(c => dto.CategoryIds.Contains(c.Id))
+                    .ToListAsync();
+                foreach (var cat in newCategories) product.Categories.Add(cat);
+            }
+
+            var keepIds = dto.KeepImageIds ?? new List<int>();
+            var imagesToDelete = product.Images.Where(img => !keepIds.Contains(img.Id)).ToList();
+            foreach (var img in imagesToDelete) _context.ProductImages.Remove(img);
+
+            if (dto.NewImages != null)
+            {
+                foreach (var file in dto.NewImages)
+                {
+                    if (file.Length <= 0) continue;
+                    using var stream = file.OpenReadStream();
+                    var uploadParams = new ImageUploadParams
+                    {
+                        File = new FileDescription(file.FileName, stream),
+                        Transformation = new Transformation().Width(800).Crop("limit")
+                    };
+                    var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+                    product.Images.Add(new ProductImage
+                    {
+                        Url = uploadResult.SecureUrl.ToString(),
+                        ProductId = product.Id
+                    });
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return Ok(product);
+        }
+
+        // [GET] Public Product Details
+        [AllowAnonymous] // ✅ Ensure anyone can view details
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetProductById(int id)
+        {
+            var product = await _context.Products
+                .Include(p => p.Images)
+                .Include(p => p.Categories)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
+            if (product == null) return NotFound("Product not found.");
+            return Ok(product);
+        }
+
+        
         // [POST] Buy Product (Customer Only)
         [HttpPost("{id}/buy")]
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "1")]
         public async Task<IActionResult> BuyProduct(int id)
         {
+            // 1. Get User ID from Token
             var userIdString = User.FindFirstValue("id");
             if (string.IsNullOrEmpty(userIdString)) return Unauthorized("Token is missing ID.");
 
             var userId = Guid.Parse(userIdString);
-            var mainUser = await _context.Users.FindAsync(userId);
-            if (mainUser == null) return Unauthorized("User account no longer exists.");
 
+            // 2. ✅ SECURITY CHECK: Does this User actually exist in the main Users table?
+            // (This fixes the crash if you are using an old token)
+            var mainUser = await _context.Users.FindAsync(userId); // Assuming you used IdentityUser or AppUser
+            if (mainUser == null)
+            {
+                return Unauthorized("User account no longer exists. Please Log Out and Log In again.");
+            }
+
+            // 3. Ensure Customer Profile Exists
             var customer = await _context.Customers.FindAsync(userId);
             if (customer == null)
             {
-                customer = new Customer { Id = userId, UserId = userId };
+                customer = new Customer
+                {
+                    Id = userId,
+                    UserId = userId
+                };
                 _context.Customers.Add(customer);
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(); // This creates the customer profile
             }
 
+            // 4. Find Product and Create Order
             var product = await _context.Products.FindAsync(id);
             if (product == null) return NotFound("Product not found.");
             if (product.StockQuantity < 1) return BadRequest("Out of stock.");
@@ -214,88 +273,23 @@ namespace Artifex_Backend_2.Controllers
         public async Task<IActionResult> GetTrendingProducts()
         {
             var trendingProducts = await _context.Products
+    
                 .Where(p => p.IsTrending)
-                .Include(p => p.Images)
-                .Include(p => p.Seller)
-                    .ThenInclude(s => s.User)
+                .Include(p => p.Images) // Include images for UI
                 .ToListAsync();
 
-            var result = trendingProducts.Select(p => new {
-                p.Id,
-                p.Name,
-                p.Price,
-                Thumbnail = p.Images.FirstOrDefault()?.Url,
-                SellerName = p.Seller?.ShopName ?? p.Seller?.User?.Username ?? "Unknown Shop"
-            });
-
-            return Ok(result);
+            return Ok(trendingProducts);
         }
 
-        // [DELETE] Delete Product
-        [HttpDelete("{id}")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
-        public async Task<IActionResult> DeleteProduct(int id)
+        // [GET] All Products (Shop Page)
+        [HttpGet]
+        [AllowAnonymous] // ✅ FIX: Added this so Shop page loads without login
+        public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
         {
-            var userIdString = User.FindFirstValue("id");
-            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized();
-
-            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
-            if (seller == null) return Forbid();
-
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return NotFound();
-            if (product.SellerId != seller.Id) return Forbid("You do not own this product.");
-
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
-            return NoContent();
-        }
-
-        // [PUT] Edit Product
-        [HttpPut("{id}")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")] // ✅ Only Sellers can edit
-        public async Task<IActionResult> PutProduct(int id, [FromBody] ProductUpdateDto dto) // ✅ Use a DTO, not the raw Product
-        {
-            // 1. Get the current user
-            var userIdString = User.FindFirstValue("id");
-            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized("Invalid token.");
-
-            // 2. Find the Seller Profile
-            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
-            if (seller == null) return Forbid("Seller profile not found.");
-
-            // 3. Find the Product
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return NotFound("Product not found.");
-
-            // 4. SECURITY CHECK: Does this seller own this product?
-            if (product.SellerId != seller.Id)
-            {
-                return Forbid("You do not own this product!");
-            }
-
-            // 5. Update only the allowed fields
-            product.Name = dto.Name;
-            product.Description = dto.Description;
-            product.Price = dto.Price;
-            product.StockQuantity = dto.StockQuantity;
-            product.StockStatus = dto.StockStatus;
-
-            // (Optional) Update tags/tutorial if provided
-            if (!string.IsNullOrEmpty(dto.Tags)) product.Tags = dto.Tags;
-            if (!string.IsNullOrEmpty(dto.TutorialLink)) product.TutorialLink = dto.TutorialLink;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_context.Products.Any(e => e.Id == id)) return NotFound();
-                else throw;
-            }
-
-            return Ok(new { message = "Product updated successfully!" });
+            return await _context.Products
+                .Include(p => p.Images)
+                .Include(p => p.Categories)
+                .ToListAsync();
         }
     }
 }
