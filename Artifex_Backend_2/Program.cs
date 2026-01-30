@@ -1,6 +1,5 @@
-﻿using Artifex_Backend_2.Data;
+using Artifex_Backend_2.Data;
 using Artifex_Backend_2.Models;
-using Artifex_Backend_2.Services; // Ensure this namespace exists for Email/Chapa/Invoice
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,37 +9,37 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ----------------------
-// 1. Secrets Check
-// ----------------------
-var chapaKey = builder.Configuration["Chapa:SecretKey"] ?? builder.Configuration["Chapa__SecretKey"];
-if (string.IsNullOrEmpty(chapaKey))
-{
-    Console.WriteLine("⚠️ Warning: Chapa Secret Key is missing!");
-}
-
-// ----------------------
-// 2. Database
+// Database
 // ----------------------
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
 builder.Services.AddDbContext<ArtifexDbContext>(options =>
     options.UseMySql(connectionString,
+        // ? FIX #1: Remove AutoDetect. Hardcode the version to stop startup crashes.
         new MySqlServerVersion(new Version(8, 0, 29)),
-        mySqlOptions => mySqlOptions.EnableRetryOnFailure()
+
+        mySqlOptions =>
+        {
+            mySqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null
+            );
+        }
     ));
 
 // ----------------------
-// 3. Controllers
+// Controllers
 // ----------------------
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
-    });
-
-builder.Services.AddEndpointsApiExplorer();
+        options.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    }); builder.Services.AddEndpointsApiExplorer();
 
 // ----------------------
-// 4. Swagger
+// Swagger
 // ----------------------
 builder.Services.AddSwaggerGen(options =>
 {
@@ -59,7 +58,11 @@ builder.Services.AddSwaggerGen(options =>
         {
             new OpenApiSecurityScheme
             {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
             },
             new string[] {}
         }
@@ -67,13 +70,21 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 // ----------------------
-// 5. Auth
+// Password Hasher
 // ----------------------
-builder.Services.AddSingleton<Microsoft.AspNetCore.Identity.IPasswordHasher<User>, Microsoft.AspNetCore.Identity.PasswordHasher<User>>();
+builder.Services.AddSingleton<
+    Microsoft.AspNetCore.Identity.IPasswordHasher<User>,
+    Microsoft.AspNetCore.Identity.PasswordHasher<User>>();
 
+// ----------------------
+// JWT Authentication
+// ----------------------
 var jwtSection = builder.Configuration.GetSection("Jwt");
-var jwtKey = jwtSection.GetValue<string>("Key") ?? "TemporaryDefaultKeyForDevelopmentOnly";
+var jwtKey = jwtSection.GetValue<string>("Key")!;
+var issuer = jwtSection.GetValue<string>("Issuer") ?? "Artifex";
+var audience = jwtSection.GetValue<string>("Audience") ?? "ArtifexUsers";
 
+System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -83,8 +94,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             ValidateIssuer = true,
             ValidateAudience = true,
-            ValidIssuer = jwtSection.GetValue<string>("Issuer"),
-            ValidAudience = jwtSection.GetValue<string>("Audience"),
+            ValidIssuer = issuer,
+            ValidAudience = audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.Zero
         };
@@ -93,20 +104,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // ----------------------
-// 6. Services (No Cloudinary Service Here)
-// ----------------------
-builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddHttpClient<IChapaService, ChapaService>(); // ✅ Payment
-builder.Services.AddScoped<Artifex_Backend_2.Services.IInvoiceService, Artifex_Backend_2.Services.InvoiceService>(); // ✅ Invoice PDF
-
-// ----------------------
-// 7. CORS
+// CORS for Frontend
 // ----------------------
 builder.Services.AddCors(options =>
 {
+    // ? FIX #2: Allow All Origins. This prevents "CORS Errors" while debugging.
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
@@ -118,12 +125,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// ? Use the new "AllowAll" policy
 app.UseCors("AllowAll");
+
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
 
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-app.Urls.Add($"http://0.0.0.0:{port}");
+app.MapControllers();
 
 app.Run();
