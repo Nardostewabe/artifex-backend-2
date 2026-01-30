@@ -198,6 +198,7 @@ namespace Artifex_Backend_2.Controllers
         // [GET] Public Product Details
         // ✅ Ensure anyone can view details
         [HttpGet("{id}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetProductById(int id)
         {
             var product = await _context.Products

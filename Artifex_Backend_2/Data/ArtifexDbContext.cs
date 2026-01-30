@@ -20,6 +20,7 @@ namespace Artifex_Backend_2.Data
         public DbSet<ContentAdmin> ContentAdmins { get; set; }
         public DbSet<Report> Reports { get; set; }
         public DbSet<Favorite> Favorites { get; set; }
+        public DbSet<Payment> Payments { get; set; }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
