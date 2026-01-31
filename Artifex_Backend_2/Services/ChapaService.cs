@@ -2,7 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using Artifex_Backend_2.DTOs;
-using Microsoft.Extensions.Configuration; // Required
+using Microsoft.Extensions.Configuration;
 
 namespace Artifex_Backend_2.Services
 {
@@ -21,14 +21,20 @@ namespace Artifex_Backend_2.Services
         {
             _httpClient = httpClient;
 
-            // Check both local (:) and Render (__) formats
+            // 1. Get Config
             _secretKey = config["Chapa:SecretKey"] ?? config["Chapa__SecretKey"];
             var baseUrl = config["Chapa:BaseUrl"] ?? config["Chapa__BaseUrl"];
 
             if (string.IsNullOrEmpty(_secretKey) || string.IsNullOrEmpty(baseUrl))
             {
-                // This throws a clear error so you know to fix Render Env Vars
-                throw new Exception("❌ Chapa Configuration Missing! Add 'Chapa__SecretKey' and 'Chapa__BaseUrl' to Render.");
+                throw new Exception("❌ Chapa Config Missing! Check Render Environment Variables.");
+            }
+
+            // 2. THE FIX: Force the URL to end with '/'
+            // If this is missing, HttpClient deletes the '/v1' part automatically.
+            if (!baseUrl.EndsWith("/"))
+            {
+                baseUrl += "/";
             }
 
             _httpClient.BaseAddress = new Uri(baseUrl);
@@ -45,18 +51,22 @@ namespace Artifex_Backend_2.Services
                 first_name = fName,
                 last_name = lName,
                 tx_ref = txRef,
-                // ✅ Update this to your LIVE frontend URL
+                // Ensure this points to your LIVE frontend
                 return_url = "https://artifex-frontend.onrender.com/payment/success"
             };
 
             var json = JsonSerializer.Serialize(payload);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
+            // Now this will correctly combine to: https://api.chapa.co/v1/transaction/initialize
             var response = await _httpClient.PostAsync("transaction/initialize", content);
             var responseString = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
+                // Log the exact error from Chapa so we can see it
                 throw new Exception($"Chapa Error ({response.StatusCode}): {responseString}");
+            }
 
             var result = JsonSerializer.Deserialize<ChapaResponseDto>(responseString, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 

@@ -1,9 +1,7 @@
-﻿using MimeKit;
-using MailKit.Net.Smtp;
-using MailKit.Security; // Needed for SecureSocketOptions
+﻿using System.Net;
+using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
 
 namespace Artifex_Backend_2.Services
 {
@@ -27,48 +25,51 @@ namespace Artifex_Backend_2.Services
         {
             try
             {
-                var host = "smtp.gmail.com";
-                var port = 465; // ✅ SWITCH TO PORT 465 (SSL)
-
-                var username = _config["Smtp:Username"] ?? _config["Smtp__Username"];
+                // 1. Read Settings (Checks both Local ':' and Render '__')
+                var host = _config["Smtp:Host"] ?? _config["Smtp__Host"];
+                var portStr = _config["Smtp:Port"] ?? _config["Smtp__Port"];
+                var email = _config["Smtp:Username"] ?? _config["Smtp__Username"];
                 var password = _config["Smtp:Password"] ?? _config["Smtp__Password"];
 
-                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+                if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
                 {
-                    _logger.LogError("❌ Email Credentials Missing.");
+                    _logger.LogError("❌ Email Config Missing. Check Render Environment Variables.");
                     return;
                 }
 
-                // Create Message
-                var emailMessage = new MimeMessage();
-                emailMessage.From.Add(new MailboxAddress("Artifex Support", username));
-                emailMessage.To.Add(new MailboxAddress("", toEmail));
-                emailMessage.Subject = subject;
+                // Default to port 587 if missing (Best for Gmail)
+                var port = int.TryParse(portStr, out int p) ? p : 587;
 
-                var bodyBuilder = new BodyBuilder { HtmlBody = body };
-                emailMessage.Body = bodyBuilder.ToMessageBody();
+                // 2. Configure Client
+                using var client = new SmtpClient(host, port)
+                {
+                    Credentials = new NetworkCredential(email, password),
+                    EnableSsl = true
+                };
 
-                using var client = new SmtpClient();
+                // 3. Create Message
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(email, "Artifex Support"),
+                    Subject = subject,
+                    Body = body,
+                    IsBodyHtml = true
+                };
+                mailMessage.To.Add(toEmail);
 
-                // Dangerous: Accept all SSL certs (Needed for some cloud containers)
-                client.ServerCertificateValidationCallback = (s, c, h, e) => true;
-
-                // ✅ CRITICAL CHANGE: Use SslOnConnect for Port 465
-                await client.ConnectAsync(host, port, SecureSocketOptions.SslOnConnect);
-
-                // Authenticate
-                await client.AuthenticateAsync(username, password);
-
-                // Send
-                await client.SendAsync(emailMessage);
-                await client.DisconnectAsync(true);
-
-                _logger.LogInformation($"✅ Email successfully sent to {toEmail}");
+                // 4. Send
+                await client.SendMailAsync(mailMessage);
+                _logger.LogInformation($"✅ Email sent to {toEmail}");
             }
             catch (Exception ex)
             {
-                // This logs the error but keeps your site alive
-                _logger.LogError($"❌ MAILKIT FAILED (Port 465): {ex.Message}");
+                // ✅ CRITICAL FIX: We Log the error, but we DO NOT 'throw' it.
+                // This stops the 500 Internal Server Error.
+                _logger.LogError($"❌ FAILED TO SEND EMAIL: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    _logger.LogError($"➡️ Inner Error: {ex.InnerException.Message}");
+                }
             }
         }
     }
