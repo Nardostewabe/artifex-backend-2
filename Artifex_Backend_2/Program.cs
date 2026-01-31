@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Resend;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -96,6 +97,14 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 //If you have Chapa/Invoice services, uncomment these:
  builder.Services.AddHttpClient<IChapaService, ChapaService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
+// Add this near your other builder.Services lines
+builder.Services.AddHttpClient<IResend, ResendClient>();
+builder.Services.AddOptions();
+builder.Services.Configure<ResendClientOptions>(o =>
+{
+    // Checks both Local and Render formats
+    o.ApiToken = builder.Configuration["Resend:ApiKey"] ?? builder.Configuration["Resend__ApiKey"];
+});
 
 // ----------------------
 // 6. CORS
