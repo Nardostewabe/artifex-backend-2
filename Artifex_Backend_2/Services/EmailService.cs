@@ -25,8 +25,8 @@ namespace Artifex_Backend_2.Services
             try
             {
                 var message = new EmailMessage();
-              
-                message.From = "nardostewabe@gmail.com";
+
+                message.From = "Artifex Support <onboarding@resend.dev>";
                 message.To.Add(toEmail);
                 message.Subject = subject;
                 message.HtmlBody = body;
