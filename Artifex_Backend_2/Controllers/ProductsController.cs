@@ -90,7 +90,7 @@ namespace Artifex_Backend_2.Controllers
 
         // [GET] My Products (Seller Only)
         [HttpGet("my-products")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
+        
         public async Task<IActionResult> GetSellerProducts()
         {
             var userIdString = User.FindFirstValue("id");

@@ -24,14 +24,13 @@ namespace Artifex_Backend_2.Controllers
         }
 
         // [POST] Initialize Payment
-        // ✅ FIXED: No longer asks for [FromBody] DTO. Uses Token instead.
         [HttpPost("initialize")]
         [Authorize]
         public async Task<IActionResult> InitializePayment()
         {
             try
             {
-                // 1. Get User Info from Token (Safe & Automatic)
+                // 1. Get User Info from Token
                 var userIdString = User.FindFirstValue("id");
                 var email = User.FindFirstValue(ClaimTypes.Email);
                 var username = User.FindFirstValue(ClaimTypes.Name);
@@ -44,11 +43,10 @@ namespace Artifex_Backend_2.Controllers
                 var userId = Guid.Parse(userIdString);
 
                 // 2. Setup Payment Data
-                // (In a real app, calculate 'amount' from the user's Cart in DB)
-                decimal amount = 1000.00m;
+                decimal amount = 1000.00m; // In real app, calculate this from DB
                 var txRef = "TX-" + Guid.NewGuid().ToString().Substring(0, 8);
 
-                // Split username into First/Last for Chapa
+                // Split username
                 var names = (username ?? "Guest User").Split(' ');
                 var fName = names[0];
                 var lName = names.Length > 1 ? names[1] : "User";
@@ -58,7 +56,7 @@ namespace Artifex_Backend_2.Controllers
                     txRef, amount, email, fName, lName
                 );
 
-                // 4. Save to Database (Optional: Wrap in try/catch so it doesn't block payment)
+                // 4. Save to Database
                 try
                 {
                     var payment = new Payment
@@ -75,16 +73,14 @@ namespace Artifex_Backend_2.Controllers
                 }
                 catch (Exception dbEx)
                 {
-                    // Log DB error but allow user to pay
                     Console.WriteLine($"DB Error: {dbEx.Message}");
                 }
 
-                // 5. Return JSON matching Frontend expectations
-                return Ok(new { checkout_url = checkoutUrl });
+                // ✅ FIX: Return 'checkoutUrl' (camelCase) to match Frontend expectation
+                return Ok(new { checkoutUrl = checkoutUrl, txRef = txRef });
             }
             catch (Exception ex)
             {
-                // Return 500 so Frontend knows it failed
                 return StatusCode(500, new { error = ex.Message });
             }
         }
@@ -95,7 +91,6 @@ namespace Artifex_Backend_2.Controllers
         {
             var payment = await _db.Payments.FirstOrDefaultAsync(p => p.TxRef == txRef);
 
-            // Allow verification even if local DB record is missing (robustness)
             bool isSuccessful = await _chapaService.VerifyTransaction(txRef);
 
             if (payment != null)
