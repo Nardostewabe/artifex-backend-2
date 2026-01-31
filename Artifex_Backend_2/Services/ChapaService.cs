@@ -52,7 +52,7 @@ namespace Artifex_Backend_2.Services
                 last_name = lName,
                 tx_ref = txRef,
                 // Ensure this points to your LIVE frontend
-                return_url = "https://artifex-frontend.onrender.com/payment/success"
+                return_url = "https://localhost:5173/payment/success"
             };
 
             var json = JsonSerializer.Serialize(payload);
