@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using Artifex_Backend_2.DTOs;
+using Microsoft.Extensions.Configuration; // Required
 
 namespace Artifex_Backend_2.Services
 {
@@ -19,8 +20,18 @@ namespace Artifex_Backend_2.Services
         public ChapaService(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
-            _secretKey = config["Chapa:SecretKey"];
-            _httpClient.BaseAddress = new Uri(config["Chapa:BaseUrl"]);
+
+            // Check both local (:) and Render (__) formats
+            _secretKey = config["Chapa:SecretKey"] ?? config["Chapa__SecretKey"];
+            var baseUrl = config["Chapa:BaseUrl"] ?? config["Chapa__BaseUrl"];
+
+            if (string.IsNullOrEmpty(_secretKey) || string.IsNullOrEmpty(baseUrl))
+            {
+                // This throws a clear error so you know to fix Render Env Vars
+                throw new Exception("❌ Chapa Configuration Missing! Add 'Chapa__SecretKey' and 'Chapa__BaseUrl' to Render.");
+            }
+
+            _httpClient.BaseAddress = new Uri(baseUrl);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _secretKey);
         }
 
@@ -34,8 +45,8 @@ namespace Artifex_Backend_2.Services
                 first_name = fName,
                 last_name = lName,
                 tx_ref = txRef,
-                // Replace with your actual callback URL (for frontend redirection)
-                return_url = "http://localhost:5173/payment/success"
+                // ✅ Update this to your LIVE frontend URL
+                return_url = "https://artifex-frontend.onrender.com/payment/success"
             };
 
             var json = JsonSerializer.Serialize(payload);
@@ -45,11 +56,11 @@ namespace Artifex_Backend_2.Services
             var responseString = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
-                throw new Exception($"Chapa Error: {responseString}");
+                throw new Exception($"Chapa Error ({response.StatusCode}): {responseString}");
 
             var result = JsonSerializer.Deserialize<ChapaResponseDto>(responseString, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            return result.Data.Checkout_Url;
+            return result?.Data?.Checkout_Url ?? throw new Exception("Chapa did not return a checkout URL.");
         }
 
         public async Task<bool> VerifyTransaction(string txRef)
@@ -59,7 +70,6 @@ namespace Artifex_Backend_2.Services
 
             if (!response.IsSuccessStatusCode) return false;
 
-            // Simple check. In production, deserialize and check data.status == "success"
             return responseString.Contains("success");
         }
     }

@@ -93,9 +93,9 @@ builder.Services.AddAuthorization();
 // ----------------------
 // ⚠️ YOU MUST HAVE THESE OR THE APP WILL CRASH
 builder.Services.AddScoped<IEmailService, EmailService>();
-// If you have Chapa/Invoice services, uncomment these:
-// builder.Services.AddHttpClient<IChapaService, ChapaService>();
-// builder.Services.AddScoped<IInvoiceService, InvoiceService>();
+//If you have Chapa/Invoice services, uncomment these:
+ builder.Services.AddHttpClient<IChapaService, ChapaService>();
+builder.Services.AddScoped<IInvoiceService, InvoiceService>();
 
 // ----------------------
 // 6. CORS
