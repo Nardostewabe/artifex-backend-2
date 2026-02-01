@@ -90,7 +90,7 @@ namespace Artifex_Backend_2.Controllers
 
         // [GET] My Products (Seller Only)
         [HttpGet("my-products")]
-        
+        [Authorize (AuthenticationSchemes ="Bearer",Roles = "2")]
         public async Task<IActionResult> GetSellerProducts()
         {
             var userIdString = User.FindFirstValue("id");
@@ -290,6 +290,31 @@ namespace Artifex_Backend_2.Controllers
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
                 .ToListAsync();
+        }
+
+        // [GET] Public: Get products by Seller GUID (Matches your Frontend URL)
+        [HttpGet("seller/{sellerId}")]
+        [AllowAnonymous]
+       
+        public async Task<IActionResult> GetSellerPublicProducts(Guid sellerUserId)
+        {
+            // 1. Find the Seller profile using the User's GUID
+            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == sellerUserId);
+
+            if (seller == null)
+            {
+                return NotFound("Seller profile not found for this user.");
+            }
+
+            // 2. Use the Seller's internal Integer ID to get their products
+            var products = await _context.Products
+                .Where(p => p.SellerId == seller.Id)
+                .Include(p => p.Images)
+                .Include(p => p.Categories)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+
+            return Ok(products);
         }
     }
 }
