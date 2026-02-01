@@ -40,5 +40,10 @@ namespace Artifex_Backend_2.Models
         public string? TutorialLink { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public List<ProductImage> Images { get; set; } = new List<ProductImage>();
+        public bool AllowColorCustomization { get; set; } = false;
+        public List<string> ColorOptions { get; set; } = new List<string>();
+
+        public bool AllowSizeCustomization { get; set; } = false;
+        public List<string> SizeOptions { get; set; } = new List<string>();
     }
 }

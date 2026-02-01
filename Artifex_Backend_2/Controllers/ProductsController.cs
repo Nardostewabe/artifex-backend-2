@@ -29,7 +29,7 @@ namespace Artifex_Backend_2.Controllers
             _cloudinary = new Cloudinary(account) { Api = { Secure = true } };
         }
 
-        // [POST] Create Product
+        // [POST] Create Product (With Customization)
         [HttpPost("new-product")]
         public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto dto)
         {
@@ -54,7 +54,18 @@ namespace Artifex_Backend_2.Controllers
                 Tags = dto.Tags,
                 TutorialLink = dto.TutorialLink,
                 CreatedAt = DateTime.UtcNow,
-                Images = new List<ProductImage>()
+                Images = new List<ProductImage>(),
+
+                // ✅ Customization Logic
+                AllowColorCustomization = dto.StockStatus == "Made to Order" && dto.AllowColorCustomization,
+                ColorOptions = (dto.StockStatus == "Made to Order" && dto.ColorOptions != null)
+                               ? dto.ColorOptions
+                               : new List<string>(),
+
+                AllowSizeCustomization = dto.StockStatus == "Made to Order" && dto.AllowSizeCustomization,
+                SizeOptions = (dto.StockStatus == "Made to Order" && dto.SizeOptions != null)
+                              ? dto.SizeOptions
+                              : new List<string>()
             };
 
             if (dto.CategoryIds != null && dto.CategoryIds.Any())
@@ -62,7 +73,6 @@ namespace Artifex_Backend_2.Controllers
                 var categories = await _context.Categories
                     .Where(c => dto.CategoryIds.Contains(c.Id))
                     .ToListAsync();
-
                 product.Categories = categories;
             }
 
@@ -88,9 +98,9 @@ namespace Artifex_Backend_2.Controllers
             return Ok(new { message = "Product created successfully", productId = product.Id });
         }
 
-        // [GET] My Products (Seller Only)
+        // [GET] My Products
         [HttpGet("my-products")]
-        [Authorize (AuthenticationSchemes ="Bearer",Roles = "2")]
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> GetSellerProducts()
         {
             var userIdString = User.FindFirstValue("id");
@@ -103,13 +113,14 @@ namespace Artifex_Backend_2.Controllers
                 .Where(p => p.SellerId == seller.Id)
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
+                .Include(p => p.Seller) // ✅ Include Seller
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
             return Ok(products);
         }
 
-        // [DELETE] Delete Product (Seller only)
+        // [DELETE] Delete Product
         [HttpDelete("{id}")]
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> DeleteProduct(int id)
@@ -131,7 +142,7 @@ namespace Artifex_Backend_2.Controllers
             return NoContent();
         }
 
-        // [PUT] Update Product
+        // [PUT] Update Product (With Customization)
         [HttpPut("{id}")]
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> UpdateProduct(int id, [FromForm] ProductUpdateDto dto)
@@ -157,6 +168,23 @@ namespace Artifex_Backend_2.Controllers
             product.StockStatus = dto.StockStatus;
             product.Tags = dto.Tags;
             product.TutorialLink = dto.TutorialLink;
+
+            // ✅ Update Customization
+            if (dto.StockStatus == "Made to Order")
+            {
+                product.AllowColorCustomization = dto.AllowColorCustomization;
+                product.ColorOptions = dto.ColorOptions ?? new List<string>();
+
+                product.AllowSizeCustomization = dto.AllowSizeCustomization;
+                product.SizeOptions = dto.SizeOptions ?? new List<string>();
+            }
+            else
+            {
+                product.AllowColorCustomization = false;
+                product.ColorOptions = new List<string>();
+                product.AllowSizeCustomization = false;
+                product.SizeOptions = new List<string>();
+            }
 
             if (dto.CategoryIds != null)
             {
@@ -196,89 +224,18 @@ namespace Artifex_Backend_2.Controllers
         }
 
         // [GET] Public Product Details
-        [AllowAnonymous] // ✅ Ensure anyone can view details
+        [AllowAnonymous]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProductById(int id)
         {
             var product = await _context.Products
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
+                .Include(p => p.Seller) // ✅ Show Seller
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (product == null) return NotFound("Product not found.");
             return Ok(product);
-        }
-
-        
-        // [POST] Buy Product (Customer Only)
-        [HttpPost("{id}/buy")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "1")]
-        public async Task<IActionResult> BuyProduct(int id)
-        {
-            // 1. Get User ID from Token
-            var userIdString = User.FindFirstValue("id");
-            if (string.IsNullOrEmpty(userIdString)) return Unauthorized("Token is missing ID.");
-
-            var userId = Guid.Parse(userIdString);
-
-            // 2. ✅ SECURITY CHECK: Does this User actually exist in the main Users table?
-            // (This fixes the crash if you are using an old token)
-            var mainUser = await _context.Users.FindAsync(userId); // Assuming you used IdentityUser or AppUser
-            if (mainUser == null)
-            {
-                return Unauthorized("User account no longer exists. Please Log Out and Log In again.");
-            }
-
-            // 3. Ensure Customer Profile Exists
-            var customer = await _context.Customers.FindAsync(userId);
-            if (customer == null)
-            {
-                customer = new Customer
-                {
-                    Id = userId,
-                    UserId = userId
-                };
-                _context.Customers.Add(customer);
-                await _context.SaveChangesAsync(); // This creates the customer profile
-            }
-
-            // 4. Find Product and Create Order
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return NotFound("Product not found.");
-            if (product.StockQuantity < 1) return BadRequest("Out of stock.");
-
-            var newOrder = new Order
-            {
-                BuyerId = userId,
-                ProductId = product.Id,
-                Quantity = 1,
-                TotalPrice = product.Price,
-                OrderDate = DateTime.UtcNow,
-                Status = "Pending"
-            };
-
-            product.StockQuantity--;
-            product.OrderCount++;
-            if (product.OrderCount >= 5) product.IsTrending = true;
-
-            _context.Orders.Add(newOrder);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Order placed successfully!" });
-        }
-
-        // [GET] Trending
-        [HttpGet("trending")]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetTrendingProducts()
-        {
-            var trendingProducts = await _context.Products
-    
-                .Where(p => p.IsTrending)
-                .Include(p => p.Images) // Include images for UI
-                .ToListAsync();
-
-            return Ok(trendingProducts);
         }
 
         // [GET] All Products (Shop Page)
@@ -289,16 +246,17 @@ namespace Artifex_Backend_2.Controllers
             return await _context.Products
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
+                .Include(p => p.Seller) // ✅ Show Seller
                 .ToListAsync();
         }
-        // [GET] Public: Get products by Seller (Fix for GUID IDs)
+
+        // [GET] Public: Get products by Seller (Safe for GUIDs)
         [HttpGet("seller/{id}")]
         [AllowAnonymous]
         public async Task<IActionResult> GetSellerPublicProducts(string id)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("ID is required.");
 
-            // We must parse the incoming ID string to a GUID first
             if (!Guid.TryParse(id, out var inputGuid))
             {
                 return BadRequest("Invalid ID format. Expected a GUID.");
@@ -306,16 +264,15 @@ namespace Artifex_Backend_2.Controllers
 
             Guid databaseSellerId;
 
-            // 1. Try to find Seller by their USER ID (Most likely case from your frontend)
+            // Try UserId first
             var sellerByUserId = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == inputGuid);
-
             if (sellerByUserId != null)
             {
                 databaseSellerId = sellerByUserId.Id;
             }
             else
             {
-                // 2. Fallback: Maybe the ID passed IS the Seller ID directly?
+                // Try SellerId
                 var sellerDirect = await _context.Sellers.FirstOrDefaultAsync(s => s.Id == inputGuid);
                 if (sellerDirect != null)
                 {
@@ -327,15 +284,28 @@ namespace Artifex_Backend_2.Controllers
                 }
             }
 
-            // 3. Fetch Products using the GUID we found
             var products = await _context.Products
-                .Where(p => p.SellerId == databaseSellerId) // ✅ Now comparing Guid == Guid
+                .Where(p => p.SellerId == databaseSellerId)
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
+                .Include(p => p.Seller) // ✅ Show Seller
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
             return Ok(products);
+        }
+
+        // [GET] Trending
+        [HttpGet("trending")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetTrendingProducts()
+        {
+            var trendingProducts = await _context.Products
+                .Where(p => p.IsTrending)
+                .Include(p => p.Images)
+                .ToListAsync();
+
+            return Ok(trendingProducts);
         }
     }
 }

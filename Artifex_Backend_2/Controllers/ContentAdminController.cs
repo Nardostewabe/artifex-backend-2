@@ -1,7 +1,7 @@
 ﻿using Artifex_Backend_2.Data;
 using Artifex_Backend_2.Models;
 using Artifex_Backend_2.DTOs;
-using Artifex_Backend_2.Services; // ✅ Required for IEmailService
+using Artifex_Backend_2.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +15,7 @@ namespace Artifex_Backend_2.Controllers
     public class ContentAdminController : ControllerBase
     {
         private readonly ArtifexDbContext _db;
-        private readonly IEmailService _emailService; // ✅ Inject Email Service
+        private readonly IEmailService _emailService;
 
         public ContentAdminController(ArtifexDbContext db, IEmailService emailService)
         {
@@ -23,49 +23,7 @@ namespace Artifex_Backend_2.Controllers
             _emailService = emailService;
         }
 
-        // [GET] View All Reports
-        [HttpGet("reports")]
-        public async Task<IActionResult> GetPendingReports()
-        {
-            var reports = await _db.Reports
-                .Where(r => r.Status == "Pending")
-                .Include(r => r.Reporter)
-                .Include(r => r.Product)
-                .Include(r => r.Seller)
-                .ThenInclude(s => s.User)
-                .OrderByDescending(r => r.CreatedAt)
-                .ToListAsync();
-
-            return Ok(reports);
-        }
-
-        // [POST] Escalate Report
-        [HttpPost("escalate/{reportId}")]
-        public async Task<IActionResult> EscalateReport(int reportId)
-        {
-            var report = await _db.Reports.FindAsync(reportId);
-            if (report == null) return NotFound("Report not found.");
-
-            report.Status = "Escalated";
-            await _db.SaveChangesAsync();
-
-            return Ok("Report escalated to Platform Admin.");
-        }
-
-        // [POST] Dismiss Report
-        [HttpPost("dismiss/{reportId}")]
-        public async Task<IActionResult> DismissReport(int reportId)
-        {
-            var report = await _db.Reports.FindAsync(reportId);
-            if (report == null) return NotFound();
-
-            report.Status = "Dismissed";
-            await _db.SaveChangesAsync();
-
-            return Ok("Report dismissed.");
-        }
-
-        // [POST] Delete Product & Notify Seller (New Feature)
+        // [POST] Delete Product & Notify Seller
         [HttpPost("delete-product/{productId}")]
         public async Task<IActionResult> DeleteProduct(int productId, [FromBody] string deletionReason)
         {
@@ -109,11 +67,50 @@ namespace Artifex_Backend_2.Controllers
             return Ok("Product deleted and seller notified.");
         }
 
-        // [GET] Dashboard Stats (Fixed for Many-to-Many)
+        // [GET] View All Reports
+        [HttpGet("reports")]
+        public async Task<IActionResult> GetPendingReports()
+        {
+            var reports = await _db.Reports
+                .Where(r => r.Status == "Pending")
+                .Include(r => r.Reporter)
+                .Include(r => r.Product)
+                .Include(r => r.Seller)
+                .ThenInclude(s => s.User)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync();
+
+            return Ok(reports);
+        }
+
+        // [POST] Escalate Report
+        [HttpPost("escalate/{reportId}")]
+        public async Task<IActionResult> EscalateReport(int reportId)
+        {
+            var report = await _db.Reports.FindAsync(reportId);
+            if (report == null) return NotFound("Report not found.");
+
+            report.Status = "Escalated";
+            await _db.SaveChangesAsync();
+            return Ok("Report escalated to Platform Admin.");
+        }
+
+        // [POST] Dismiss Report
+        [HttpPost("dismiss/{reportId}")]
+        public async Task<IActionResult> DismissReport(int reportId)
+        {
+            var report = await _db.Reports.FindAsync(reportId);
+            if (report == null) return NotFound();
+
+            report.Status = "Dismissed";
+            await _db.SaveChangesAsync();
+            return Ok("Report dismissed.");
+        }
+
+        // [GET] Dashboard Stats
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
         {
-            // 1. Top Rejected Seller (No change)
             var topRejections = await _db.Products
                 .Where(p => p.StockStatus == "Rejected")
                 .GroupBy(p => p.Seller.ShopName)
@@ -121,12 +118,10 @@ namespace Artifex_Backend_2.Controllers
                 .Select(g => new { Name = g.Key, Count = g.Count() })
                 .FirstOrDefaultAsync();
 
-            // 2. Most Flagged Category (Fixed)
-            // Logic: Get reported products -> Flatten their categories -> Group by Category Name
             var flaggedCategory = await _db.Reports
                 .Where(r => r.TargetType == "Product" && r.TargetProductId != null)
-                .SelectMany(r => r.Product.Categories) // ✅ Explode the list of categories
-                .GroupBy(c => c.Name)                  // ✅ Group by Category Name
+                .SelectMany(r => r.Product.Categories)
+                .GroupBy(c => c.Name)
                 .OrderByDescending(g => g.Count())
                 .Select(g => new { Name = g.Key, Count = g.Count() })
                 .FirstOrDefaultAsync();
