@@ -13,6 +13,10 @@
         // Buyer Info
         public string BuyerName { get; set; }
         public string ShippingAddress { get; set; }
+
+        // ✅ NEW: Add these to fix the CS0117 Error
+        public string? SelectedColor { get; set; }
+        public string? SelectedSize { get; set; }
     }
 
     public class UpdateOrderStatusDto
