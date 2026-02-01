@@ -283,7 +283,7 @@ namespace Artifex_Backend_2.Controllers
 
         // [GET] All Products (Shop Page)
         [HttpGet]
-        [AllowAnonymous] // ✅ FIX: Added this so Shop page loads without login
+        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<Product>>> GetProducts()
         {
             return await _context.Products
@@ -291,24 +291,45 @@ namespace Artifex_Backend_2.Controllers
                 .Include(p => p.Categories)
                 .ToListAsync();
         }
-
-        // [GET] Public: Get products by Seller GUID (Matches your Frontend URL)
-        [HttpGet("seller/{sellerId}")]
+        // [GET] Public: Get products by Seller (Fix for GUID IDs)
+        [HttpGet("seller/{id}")]
         [AllowAnonymous]
-       
-        public async Task<IActionResult> GetSellerPublicProducts(Guid sellerUserId)
+        public async Task<IActionResult> GetSellerPublicProducts(string id)
         {
-            // 1. Find the Seller profile using the User's GUID
-            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == sellerUserId);
+            if (string.IsNullOrEmpty(id)) return BadRequest("ID is required.");
 
-            if (seller == null)
+            // We must parse the incoming ID string to a GUID first
+            if (!Guid.TryParse(id, out var inputGuid))
             {
-                return NotFound("Seller profile not found for this user.");
+                return BadRequest("Invalid ID format. Expected a GUID.");
             }
 
-            // 2. Use the Seller's internal Integer ID to get their products
+            Guid databaseSellerId;
+
+            // 1. Try to find Seller by their USER ID (Most likely case from your frontend)
+            var sellerByUserId = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == inputGuid);
+
+            if (sellerByUserId != null)
+            {
+                databaseSellerId = sellerByUserId.Id;
+            }
+            else
+            {
+                // 2. Fallback: Maybe the ID passed IS the Seller ID directly?
+                var sellerDirect = await _context.Sellers.FirstOrDefaultAsync(s => s.Id == inputGuid);
+                if (sellerDirect != null)
+                {
+                    databaseSellerId = sellerDirect.Id;
+                }
+                else
+                {
+                    return NotFound("Seller profile not found.");
+                }
+            }
+
+            // 3. Fetch Products using the GUID we found
             var products = await _context.Products
-                .Where(p => p.SellerId == seller.Id)
+                .Where(p => p.SellerId == databaseSellerId) // ✅ Now comparing Guid == Guid
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
                 .OrderByDescending(p => p.CreatedAt)
