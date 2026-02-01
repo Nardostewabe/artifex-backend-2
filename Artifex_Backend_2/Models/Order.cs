@@ -20,5 +20,7 @@ namespace Artifex_Backend_2.Models
         public decimal TotalPrice { get; set; } // Price * Quantity at time of purchase
         public DateTime OrderDate { get; set; } = DateTime.UtcNow;
         public string Status { get; set; } = "Pending";
+        public string? SelectedColor { get; set; }
+        public string? SelectedSize { get; set; }
     }
 }

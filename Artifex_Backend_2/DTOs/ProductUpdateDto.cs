@@ -21,6 +21,11 @@ namespace Artifex_Backend_2.DTOs
 
             // New images to upload
             public List<IFormFile>? NewImages { get; set; }
-        }
+        public bool AllowColorCustomization { get; set; }
+        public List<string>? ColorOptions { get; set; }
+
+        public bool AllowSizeCustomization { get; set; }
+        public List<string>? SizeOptions { get; set; }
+    }
     }
 

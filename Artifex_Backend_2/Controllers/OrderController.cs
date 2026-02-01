@@ -35,7 +35,7 @@ namespace Artifex_Backend_2.Controllers
 
                 var userId = Guid.Parse(userIdString);
 
-                // 2. Find Customer Profile (Using UserId, NOT Primary Key)
+                // 2. Find Customer Profile
                 var customer = await _context.Customers
                     .FirstOrDefaultAsync(c => c.UserId == userId);
 
@@ -66,12 +66,16 @@ namespace Artifex_Backend_2.Controllers
                     // Create Order
                     var order = new Order
                     {
-                        BuyerId = customer.Id, // Link to Customer Table
-                        ProductId = product.Id, // Link to Product Table
+                        BuyerId = customer.Id,
+                        ProductId = product.Id,
                         Quantity = item.Quantity,
                         TotalPrice = product.Price * item.Quantity,
                         OrderDate = DateTime.UtcNow,
-                        Status = "Processing"
+                        Status = "Pending",
+
+                        // ✅ NEW: Save the Customization Options
+                        SelectedColor = item.SelectedColor,
+                        SelectedSize = item.SelectedSize
                     };
 
                     orders.Add(order);
@@ -80,13 +84,12 @@ namespace Artifex_Backend_2.Controllers
 
                 // 4. Save to Database
                 _context.Orders.AddRange(orders);
-                await _context.SaveChangesAsync(); // <--- Crash usually happens here
+                await _context.SaveChangesAsync();
 
                 return Ok(new { message = "Checkout successful!", total = totalTransactionValue });
             }
             catch (Exception ex)
             {
-                // THIS WILL SHOW THE REAL ERROR IN YOUR CONSOLE
                 Console.WriteLine($"--------------- CHECKOUT ERROR ---------------");
                 Console.WriteLine(ex.Message);
                 if (ex.InnerException != null) Console.WriteLine($"Inner: {ex.InnerException.Message}");
@@ -96,8 +99,8 @@ namespace Artifex_Backend_2.Controllers
             }
         }
 
-        // 1. GET: View all orders for the logged-in Seller
-        [Authorize(Roles = "2")] // Role 2 = Seller
+        // [GET] Seller Orders (Updated to show customization)
+        [Authorize(Roles = "2")]
         [HttpGet("seller-orders")]
         public async Task<ActionResult<IEnumerable<SellerOrderDto>>> GetSellerOrders()
         {
@@ -105,35 +108,37 @@ namespace Artifex_Backend_2.Controllers
             if (string.IsNullOrEmpty(userIdString)) return Unauthorized();
             var userId = Guid.Parse(userIdString);
 
-            // 1. Find the Seller ID associated with this User
             var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
             if (seller == null) return BadRequest("Seller profile not found.");
 
-            // 2. Fetch Orders where the Product belongs to THIS Seller
             var orders = await _context.Orders
                 .Include(o => o.Product)
-                    .ThenInclude(p => p.Images) // To show product thumbnail
-                .Include(o => o.Buyer) // To show Customer Name/Address
+                    .ThenInclude(p => p.Images)
+                .Include(o => o.Buyer)
                 .Where(o => o.Product.SellerId == seller.Id)
                 .OrderByDescending(o => o.OrderDate)
                 .Select(o => new SellerOrderDto
                 {
                     OrderId = o.Id,
                     ProductName = o.Product.Name,
-                    ProductImage = o.Product.Images.FirstOrDefault().Url, // Get first image
+                    ProductImage = o.Product.Images.FirstOrDefault().Url,
                     Quantity = o.Quantity,
                     TotalPrice = o.TotalPrice,
                     Status = o.Status,
                     OrderDate = o.OrderDate,
                     BuyerName = o.Buyer.FullName ?? "Guest",
-                    ShippingAddress = o.Buyer.ShippingAddress ?? "No address provided"
+                    ShippingAddress = o.Buyer.ShippingAddress ?? "No address provided",
+
+                    // ✅ NEW: Send these to the frontend seller dashboard
+                    SelectedColor = o.SelectedColor,
+                    SelectedSize = o.SelectedSize
                 })
                 .ToListAsync();
 
             return Ok(orders);
         }
 
-        // 2. PUT: Update Order Status (e.g. "Shipped")
+        // [PUT] Update Status
         [Authorize(Roles = "2")]
         [HttpPut("{orderId}/status")]
         public async Task<IActionResult> UpdateOrderStatus(int orderId, [FromBody] UpdateOrderStatusDto dto)
@@ -144,14 +149,12 @@ namespace Artifex_Backend_2.Controllers
             var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
             if (seller == null) return Unauthorized();
 
-            // Find the order and include product to verify ownership
             var order = await _context.Orders
                 .Include(o => o.Product)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null) return NotFound("Order not found.");
 
-            // SECURITY CHECK: Ensure this order is for a product owned by this seller
             if (order.Product.SellerId != seller.Id)
             {
                 return Forbid("You are not authorized to manage this order.");
@@ -162,8 +165,9 @@ namespace Artifex_Backend_2.Controllers
 
             return Ok(new { message = $"Order status updated to {dto.NewStatus}" });
         }
-        // 3. GET: View all orders for the logged-in Customer
-        [Authorize(Roles = "1")] // Role 1 = Customer
+
+        // [GET] Customer Orders
+        [Authorize(Roles = "1")]
         [HttpGet("customer-orders")]
         public async Task<ActionResult<IEnumerable<dynamic>>> GetCustomerOrders()
         {
@@ -177,9 +181,10 @@ namespace Artifex_Backend_2.Controllers
             var orders = await _context.Orders
                 .Include(o => o.Product)
                     .ThenInclude(p => p.Images)
+                .Include(o => o.Product.Seller) // To show shop name
                 .Where(o => o.BuyerId == customer.Id)
                 .OrderByDescending(o => o.OrderDate)
-                .Select(o => new 
+                .Select(o => new
                 {
                     OrderId = o.Id,
                     ProductName = o.Product.Name,
@@ -188,7 +193,11 @@ namespace Artifex_Backend_2.Controllers
                     TotalPrice = o.TotalPrice,
                     Status = o.Status,
                     OrderDate = o.OrderDate,
-                    SellerName = o.Product.Seller.ShopName
+                    SellerName = o.Product.Seller.ShopName,
+
+                    // ✅ NEW: Show customer what they picked
+                    SelectedColor = o.SelectedColor,
+                    SelectedSize = o.SelectedSize
                 })
                 .ToListAsync();
 

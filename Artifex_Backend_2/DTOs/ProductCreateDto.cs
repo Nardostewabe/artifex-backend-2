@@ -24,5 +24,10 @@ namespace Artifex_Backend_2.DTOs
 
         // This captures the files sent from React
         public List<IFormFile>? Images { get; set; }
+        public bool AllowColorCustomization { get; set; } = false;
+        public List<string>? ColorOptions { get; set; }
+
+        public bool AllowSizeCustomization { get; set; } = false;
+        public List<string>? SizeOptions { get; set; }
     }
 }
