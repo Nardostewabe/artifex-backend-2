@@ -12,7 +12,7 @@ namespace Artifex_Backend_2.Models
         public Guid SellerId { get; set; }
 
         [ForeignKey("SellerId")]
-        [JsonIgnore]
+        
         public virtual Seller Seller { get; set; }
 
        
