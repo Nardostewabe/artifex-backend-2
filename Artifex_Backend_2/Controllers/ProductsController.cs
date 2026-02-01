@@ -29,7 +29,7 @@ namespace Artifex_Backend_2.Controllers
             _cloudinary = new Cloudinary(account) { Api = { Secure = true } };
         }
 
-        // [POST] Create Product (With Customization)
+        // [POST] Create Product (Includes Customization)
         [HttpPost("new-product")]
         public async Task<IActionResult> CreateProduct([FromForm] ProductCreateDto dto)
         {
@@ -68,6 +68,7 @@ namespace Artifex_Backend_2.Controllers
                               : new List<string>()
             };
 
+            // Categories
             if (dto.CategoryIds != null && dto.CategoryIds.Any())
             {
                 var categories = await _context.Categories
@@ -76,6 +77,7 @@ namespace Artifex_Backend_2.Controllers
                 product.Categories = categories;
             }
 
+            // Images
             if (dto.Images != null && dto.Images.Count > 0)
             {
                 foreach (var file in dto.Images)
@@ -113,36 +115,14 @@ namespace Artifex_Backend_2.Controllers
                 .Where(p => p.SellerId == seller.Id)
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
-                .Include(p => p.Seller) // ✅ Include Seller
+                .Include(p => p.Seller) // ✅ Shows Seller Info
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
             return Ok(products);
         }
 
-        // [DELETE] Delete Product
-        [HttpDelete("{id}")]
-        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
-        public async Task<IActionResult> DeleteProduct(int id)
-        {
-            var userIdString = User.FindFirstValue("id");
-            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized();
-
-            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
-            if (seller == null) return Forbid();
-
-            var product = await _context.Products.FindAsync(id);
-            if (product == null) return NotFound();
-
-            if (product.SellerId != seller.Id) return Forbid("You do not own this product.");
-
-            _context.Products.Remove(product);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        // [PUT] Update Product (With Customization)
+        // [PUT] Update Product (Includes Customization)
         [HttpPut("{id}")]
         [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
         public async Task<IActionResult> UpdateProduct(int id, [FromForm] ProductUpdateDto dto)
@@ -169,7 +149,7 @@ namespace Artifex_Backend_2.Controllers
             product.Tags = dto.Tags;
             product.TutorialLink = dto.TutorialLink;
 
-            // ✅ Update Customization
+            // ✅ Update Customization Logic
             if (dto.StockStatus == "Made to Order")
             {
                 product.AllowColorCustomization = dto.AllowColorCustomization;
@@ -186,6 +166,7 @@ namespace Artifex_Backend_2.Controllers
                 product.SizeOptions = new List<string>();
             }
 
+            // Update Categories
             if (dto.CategoryIds != null)
             {
                 product.Categories.Clear();
@@ -195,6 +176,7 @@ namespace Artifex_Backend_2.Controllers
                 foreach (var cat in newCategories) product.Categories.Add(cat);
             }
 
+            // Update Images
             var keepIds = dto.KeepImageIds ?? new List<int>();
             var imagesToDelete = product.Images.Where(img => !keepIds.Contains(img.Id)).ToList();
             foreach (var img in imagesToDelete) _context.ProductImages.Remove(img);
@@ -223,6 +205,28 @@ namespace Artifex_Backend_2.Controllers
             return Ok(product);
         }
 
+        // [DELETE] Delete Product
+        [HttpDelete("{id}")]
+        [Authorize(AuthenticationSchemes = "Bearer", Roles = "2")]
+        public async Task<IActionResult> DeleteProduct(int id)
+        {
+            var userIdString = User.FindFirstValue("id");
+            if (!Guid.TryParse(userIdString, out var userId)) return Unauthorized();
+
+            var seller = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (seller == null) return Forbid();
+
+            var product = await _context.Products.FindAsync(id);
+            if (product == null) return NotFound();
+
+            if (product.SellerId != seller.Id) return Forbid("You do not own this product.");
+
+            _context.Products.Remove(product);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         // [GET] Public Product Details
         [AllowAnonymous]
         [HttpGet("{id}")]
@@ -231,7 +235,7 @@ namespace Artifex_Backend_2.Controllers
             var product = await _context.Products
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
-                .Include(p => p.Seller) // ✅ Show Seller
+                .Include(p => p.Seller) // ✅ Shows Seller Info
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (product == null) return NotFound("Product not found.");
@@ -246,49 +250,46 @@ namespace Artifex_Backend_2.Controllers
             return await _context.Products
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
-                .Include(p => p.Seller) // ✅ Show Seller
+                .Include(p => p.Seller) // ✅ Shows Seller Info
                 .ToListAsync();
         }
 
-        // [GET] Public: Get products by Seller (Safe for GUIDs)
+        // [GET] Public: Get products by Seller (Universal ID Fix)
         [HttpGet("seller/{id}")]
         [AllowAnonymous]
         public async Task<IActionResult> GetSellerPublicProducts(string id)
         {
             if (string.IsNullOrEmpty(id)) return BadRequest("ID is required.");
 
-            if (!Guid.TryParse(id, out var inputGuid))
-            {
-                return BadRequest("Invalid ID format. Expected a GUID.");
-            }
-
             Guid databaseSellerId;
 
-            // Try UserId first
-            var sellerByUserId = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == inputGuid);
-            if (sellerByUserId != null)
+            // Handle GUID vs Int ID logic properly to avoid crashes
+            if (Guid.TryParse(id, out var inputGuid))
             {
-                databaseSellerId = sellerByUserId.Id;
-            }
-            else
-            {
-                // Try SellerId
-                var sellerDirect = await _context.Sellers.FirstOrDefaultAsync(s => s.Id == inputGuid);
-                if (sellerDirect != null)
+                // 1. Try finding by User ID first (most common case in frontend)
+                var sellerByUserId = await _context.Sellers.FirstOrDefaultAsync(s => s.UserId == inputGuid);
+                if (sellerByUserId != null)
                 {
-                    databaseSellerId = sellerDirect.Id;
+                    databaseSellerId = sellerByUserId.Id;
                 }
                 else
                 {
-                    return NotFound("Seller profile not found.");
+                    // 2. Try finding by Seller ID directly
+                    var sellerDirect = await _context.Sellers.FirstOrDefaultAsync(s => s.Id == inputGuid);
+                    if (sellerDirect == null) return NotFound("Seller not found.");
+                    databaseSellerId = sellerDirect.Id;
                 }
+            }
+            else
+            {
+                return BadRequest("Invalid ID format. GUID expected.");
             }
 
             var products = await _context.Products
                 .Where(p => p.SellerId == databaseSellerId)
                 .Include(p => p.Images)
                 .Include(p => p.Categories)
-                .Include(p => p.Seller) // ✅ Show Seller
+                .Include(p => p.Seller) // ✅ Shows Seller Info
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
